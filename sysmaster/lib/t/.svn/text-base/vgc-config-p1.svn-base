@@ -1,0 +1,6 @@
+
+vgc-config: 3.0 (46085.C4)
+
+Current Configuration:
+     /dev/vgcb0                 mode=maxperformance             sector-size=512         raid=enabled
+[root@sqa05 ~]#      

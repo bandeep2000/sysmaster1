@@ -1,0 +1,20 @@
+vgc-config: 2.1.2(B5R1.37088)
+
+ERROR: Last config apply had failed/Config apply in progress !!!
+
+vgc-config [ -h ]
+vgc-config -d <drive name> | -p <partition name> [ -i | -l | -r | -u ]
+vgc-config -p <partition name> [ -m <mode> -s <sector-size> -5 <raid-mode> ]
+vgc-config -d <drive name>     [ -m <mode> -s <sector-size> -5 <raid-mode> -n <num-partitions> ]
+
+	-5 : RAID mode. enabled/disabled.
+	-d : device name /dev/vgc[X]
+	-h : display this help and exit
+	-i : interactive mode
+	-l : list current and pending config changes
+	-m : maxperformance/maxcapacity mode
+	-n : number of partitions, (1/2). N300, N600, M1000 support 1, and others support 1, 2
+	-p : partition name /dev/vgc[a-h][0-1]
+	-r : reset to factory defaults
+	-s : block device sector size, 512(default)/4096
+	-u : undo pending config changes

@@ -1,0 +1,65 @@
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/svn/!svn/ver/79591/sqa/scripts/systemqa/lib/Machine
+END
+HostWindows.py
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/svn/!svn/ver/69238/sqa/scripts/systemqa/lib/Machine/HostWindows.py
+END
+winexe
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/!svn/ver/63030/sqa/scripts/systemqa/lib/Machine/winexe
+END
+Memory.py
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/svn/!svn/ver/65383/sqa/scripts/systemqa/lib/Machine/Memory.py
+END
+Host.py
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/!svn/ver/79591/sqa/scripts/systemqa/lib/Machine/Host.py
+END
+HostLinux.py
+K 25
+svn:wc:ra_dav:version-url
+V 65
+/svn/!svn/ver/79590/sqa/scripts/systemqa/lib/Machine/HostLinux.py
+END
+Stats.py
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/svn/!svn/ver/69623/sqa/scripts/systemqa/lib/Machine/Stats.py
+END
+__init__.py
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/svn/!svn/ver/61177/sqa/scripts/systemqa/lib/Machine/__init__.py
+END
+VerificationsRDT.py
+K 25
+svn:wc:ra_dav:version-url
+V 72
+/svn/!svn/ver/79406/sqa/scripts/systemqa/lib/Machine/VerificationsRDT.py
+END
+Verifications.py
+K 25
+svn:wc:ra_dav:version-url
+V 69
+/svn/!svn/ver/79406/sqa/scripts/systemqa/lib/Machine/Verifications.py
+END
+Stimulus.py
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/svn/!svn/ver/65383/sqa/scripts/systemqa/lib/Machine/Stimulus.py
+END

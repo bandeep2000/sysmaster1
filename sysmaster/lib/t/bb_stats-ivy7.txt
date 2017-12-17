@@ -1,0 +1,6 @@
+    Data Read Errors (CE, UE, Erased, PErased, IO) : 9461 1695 0 0 0
+          RMAP L0 errors (CE, UE, WE, PErased, IO) : 0 0 0 0 0
+          RMAP L1 errors (CE, UE, WE, PErased, IO) : 0 0 0 0 0
+    META Read Errors (CE, UE, Erased, PErased, IO) : 10 0 0 0 0
+USB META Read Errors (CE, UE, Erased, PErased, IO) : 0 0 0 0 0
+

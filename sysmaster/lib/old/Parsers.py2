@@ -1,0 +1,371 @@
+#!/usr/bin/python
+import re,sys
+from card import *
+from Trace import *
+# Set device regex
+DEV_RE = "(\/dev\/vgc[a-z])"
+# set device regex with partition
+DEV_RE_PART = "(\/dev\/vgc[a-z]\d+)"
+
+class ParseError(Exception):
+   pass
+def parse_lines(output_str):
+    output_a = output_str.split("\r\n")
+    return output_a
+
+
+def parse_vgc_monitor(output):
+    vgc_mon_build       = "(vgc-monitor):\s+(\S+)"
+    driver_uptime_regex = "Driver Uptime:\s+(\d+:\d+)"
+    card_part_det_regex = DEV_RE_PART + "\s+(\d+)\s+GiB\s+(\d+)\s+GB\s+(\S+)\s+(.*)"
+    # card w/o partition regex
+    card_part_regex     = DEV_RE + "\s+(\d+)\s+GiB\s+(\d+)\s+(\d+)\s+(.*)"
+    temp_regex          = "Temperature\s+:\s+(.*),\s*(\d+)\s+C"
+    err_regex           = "ERROR:\s+(.*)"
+    serial_regex        = "Serial Number\s+:\s+(\S+)"
+    mode_regex          = "Mode\s+:\s+(\S+)"
+    remain_life         = "Remaining Life\s+:\s+(\S+)%"
+    part_state          = "Partition State\s+:(\S+)"
+    daut_brd_regex      = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(\d\s\d\s\d\s\d)\s+(.*)"
+    card_info           = "Card Info\s+:\s+(.*)"
+    readRegex           = "(\d+)\s+\((\S+)\)\s+\(reads\)"
+    writeRegex          = "(\d+)\s+\((\S+)\)\s+\(writes\)"
+    
+    #     Num RAID groups               : 12
+    #Degraded RAID group List      : none
+    #Multi-Failure RAID group List : none
+    
+    numRaidGroups_regex        =  "Num RAID groups\s+:\s+(\d+)"
+    degradedRaidGroup_regex    =  "Degraded RAID group List\s+:\s+(none)"
+    multiFailureRaidGroup_regex =  "Multi-Failure RAID group List\s+:\s+(none)"
+    revRegex                 =   "Rev\s+:\s+Flash[mM][aA][xX]\s+(\d+)\s*,\s+module\s+\d+,\s+(x\d+)\s+(Gen\d+)"
+    
+
+
+    #zion_dbs            = "    0         128 GiB   98.86%       --                   GOOD      "
+    #zion_dbs_regex      = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(--)\s+(.*)"
+    zion_dbs_regex       = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(.*)"
+    #print card_part_regex
+    
+    card_det = {}
+    card_part = ""
+    part  = {} # temporary dict to hold vgca1 partition details
+    db = {} # temp dict to hold daughter board 
+    
+    for l in output:
+         if re.search(vgc_mon_build,l):
+             m = re.search(vgc_mon_build,l)
+             build = m.group(2)
+             card_det['build'] = build
+	 elif re.search(revRegex,l):
+	     g = re.search(revRegex,l)
+	     rtl = g.group(1)
+	     pcilanes = g.group(2)
+	     pcigen = g.group(3)
+		#print rtl,
+		#print pcilanes,
+		#print pcigen,
+	     card_det['rtl'] = rtl
+	     card_det['pcilanes'] = pcilanes
+	     card_det['pcigen'] = pcigen
+		
+
+         elif re.search(driver_uptime_regex,l):
+             m = re.search(driver_uptime_regex,l)
+             d_uptime = m.group(1)
+             print d_uptime
+             card_det['d_uptime'] = d_uptime
+         elif re.search(temp_regex,l):
+             m = re.search(temp_regex,l)
+             card_det['temp_s'] = m.group(1)
+             card_det['temp'] =  m.group(2)
+         elif re.search(card_info,l):
+             m = re.search(card_info,l)
+             card_det['card_info'] = m.group(1)
+         elif re.search(err_regex,l):
+             m = re.search(err_regex,l)
+             card_det['err'] = m.group(1)
+         
+         elif re.search(card_part_regex,l):
+             m = re.search(card_part_regex,l)
+             card = m.group(1)
+             card_det[card] = {}
+             state = m.group(5)
+             card_det['state'] = state
+         # partition details,state , mode
+         elif re.search(card_part_det_regex,l):
+             m = re.search(card_part_det_regex,l)
+             card_part =  m.group(1)
+             card_part_rcap = m.group(2)
+             card_part_ucap = m.group(3)
+             card_part_raid = m.group(4)
+             card_part_state =  m.group(5)
+
+             # this will be initialized here and will used later
+             part[card_part] = {}
+             part[card_part]['state'] = card_part_state
+             #rd_det[card_part]['part'] = part
+             part[card_part]['raid'] = card_part_raid
+             part[card_part]['rcap'] = card_part_rcap
+             part[card_part]['ucap'] = card_part_ucap
+             card_det['part'] = part
+	     
+	 elif re.search(numRaidGroups_regex,l):
+		 m = re.search(numRaidGroups_regex,l)
+		 part[card_part]['raidgrps'] = m.group(1)
+         elif re.search(degradedRaidGroup_regex,l):
+		 m = re.search(degradedRaidGroup_regex,l)
+		 part[card_part]['degraidgrps'] = m.group(1)
+         elif re.search(multiFailureRaidGroup_regex,l):
+		 m = re.search(multiFailureRaidGroup_regex,l)
+		 part[card_part]['mfailureraidgrps'] = m.group(1)
+         
+         elif re.search(readRegex,l):
+             m = re.search(readRegex,l)
+             part[card_part]['read'] = m.group(1)
+             part[card_part]['read_tb'] = m.group(2)
+         elif re.search(writeRegex,l):
+             m = re.search(writeRegex,l)
+             part[card_part]['write'] = m.group(1)
+             part[card_part]['write_tb'] = m.group(2)
+
+         elif re.search(serial_regex,l):
+             m = re.search(serial_regex,l)
+             card_det['serial'] =  m.group(1)
+         elif re.search(mode_regex,l):
+             m = re.search(mode_regex,l)
+             part[card_part]['mode'] = m.group(1)
+             card_det['part'] = part
+
+
+         elif re.search(remain_life,l):
+             m = re.search(remain_life,l)
+             part[card_part]['life'] = m.group(1)
+             card_det['part'] = part
+             #print m.group(1)
+         #daut_brd_regex = 
+         #"(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(\d\s\d\s\d\s\d)\s+(.*)"
+
+         if re.search(daut_brd_regex,l):
+             m = re.search(daut_brd_regex,l)
+             db_no = m.group(1)
+             db[db_no] = {}
+             db[db_no]['cap'] = m.group(2)
+             db[db_no]['life'] = m.group(3)
+             db[db_no]['rgrp'] = m.group(4)
+             db[db_no]['state'] = m.group(5)
+             part[card_part]['db'] = db
+         #zion_dbs            = "    0         128 GiB   98.86%       --                   GOOD      "
+         #zion_dbs_regex       = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(\S+)\s+(.*)"
+         if re.search(zion_dbs_regex,l): 
+             m = re.search(zion_dbs_regex,l)
+             db_no = m.group(1)
+             db[db_no] = {}
+             db[db_no]['cap'] = m.group(2)
+             db[db_no]['life'] = m.group(3)
+             #db[db_no]['rgrp'] = m.group(4)
+             db[db_no]['state'] = m.group(4)
+             part[card_part]['db'] = db
+
+
+
+    return card_det
+
+def get_vgc_mon_d_attr(output,attr):
+   return parse_vgc_monitor(output)[attr]
+# get partition attribute
+# rint get_vgc_mon_d_part_attr(vgc_mond_output,"/dev/vgca0","mode")
+def get_vgc_mon_d_part_attr(output,device,attr):
+   return parse_vgc_monitor(output)['part'][device][attr]
+
+def chk_if_key_exists(dict,key,dict_details):
+    if dict.has_key(key):
+	val = dict[key]
+	trace_info("key '%s' exists in %s with value '%s'"%(key,dict_details,val))
+	return True
+    trace_error("key '%s' doesn't exists in %s"%(key,dict_details))
+   
+    sys.exit(1)
+
+def verify_vgc_monitor_zion(output):
+    #print output
+    part_dict = output['part']
+    #print part_dict
+    #get partitions from part_dict
+    partitions = part_dict.keys()
+    
+    #partion keys'mfailureraidgrps'
+    part_keys = ['raid','read','read_tb','ucap','mode','write','state','write_tb','db','mfailureraidgrps',
+                   'degraidgrps','raidgrps']
+    # device keys,global
+    dev_keys =  ['temp','state','d_uptime','serial','temp_s','card_info','rtl','pcilanes','pcigen']
+    db_keys = ['life','cap','state',]
+    for partition in partitions:
+	 found_dbrd = 0
+	 for part_k in part_keys:
+	     dict_p = part_dict[partition]
+	     if part_k == "db":
+		     found_dbrd = 1
+		     
+		     db_dict = dict_p[part_k]
+		     dbs = db_dict.keys()
+		     #print dbs
+		     
+		     for db in dbs:
+			
+			trace_info("Checking daugther board %s"%db)
+			dbs_val_dict = db_dict[db]
+			#print dbs_val_dict
+			
+			for db_k in db_keys:
+			    if chk_if_key_exists(dbs_val_dict,db_k,"vgc-monitor dbrd %s %s"%(db,partition)):
+				continue
+			     
+		     
+             if chk_if_key_exists(dict_p,part_k,"vgc-monitor partition %s"%partition):
+		 continue
+	     
+	 if found_dbrd == 0:
+		     trace_error("Did't find daugther board in partition '%s' in vgc-monitor output"%partition)
+		     sys.exit(1)
+    
+    for k in dev_keys:
+	 if chk_if_key_exists(output,k,"vgc-monitor %s"%partition):
+             continue
+    
+
+    return 1
+
+# returns {'read': {'bw_r': '659708', 'r_iops': '164927', 'r_lat': '866.50', 'r_runt': '2005'}, 
+# 'write': {'bw_w': '662609', 'w_lat': '702.07', 'w_runt': '2005', 'w_iops': '165652'}}
+def parse_fio_output(output):
+
+     # Match read : io=1928.9MB, bw=657279KB/s, iops=164319 , runt=  3005msec
+     iops_regex = "io=(\d+\.?\d*)[MK]B,\s*bw=(\d+\.?\d*)[MK]B/s\s*,\s*iops=(\d+)\s*,\s*runt=\s*(\d+)msec"
+     read_iops_regex = "read\s+:\s*" + iops_regex
+     write_iops_regex = "write\s*:\s*" + iops_regex
+     #read_iops_regex = "read\s+:\s+io=(\d+\.\d+)MB,\s+bw=(\d+\.?\d*)[MK]B/s,\s+iops=(\d+)\s+,\s+runt=\s+(\d+)msec"
+     #read_iops_regex = "read\s+:\s+io=(\d+\.\d+)MB,\s+bw=(\d+\.?\d*)[MK]B/s,\s+iops=(\d+)\s+,\s+runt=\s+(\d+)msec"
+     #write_iops_regex = "write\s*:\s+io=(\d+\.\d+)MB,\s+bw=(\d+)[MK]B/s,\s+iops=(\d+)\s+,\s+runt=\s+(\d+)msec"
+
+     # lat (usec): min=56 , max=10607 , avg=816.75, stdev=55.13
+     lat_regex = "lat\s+\(usec\):\s+min=\d+\s+,\s+max=\d+\s+,\s+avg=(\d+\.\d+)\s*,\s+stdev=\d+\.\d+"
+
+     # READ: io=1928.9MB, aggrb=657279KB/s, minb=673053KB/s, maxb=673053KB/s, mint=3005msec, maxt=3005msec
+     regex_agg_read = "READ:\s+io=(\d+\.?\d*[MK]B),\s+aggrb=(\d+\.?\d*[MK]B/s),.*"
+     regex_agg_write = "WRITE:\s+io=(\d+\.?\d*[MK]B),\s+aggrb=(\d+\.?\d*[MK]B/s),.*"
+
+     dict = {}
+
+     dict['read']  = {}
+     dict['write'] = {}
+
+     found_read = 0
+    
+     for l in output:
+        print l
+        # read iops
+        if re.search(read_iops_regex,l):
+            found_read = 1
+            m = re.search(read_iops_regex,l)
+
+            # get iops and runtime only
+            r_iops = m.group(3)
+            r_runt = m.group(4) # run time
+
+            dict['read']['iops'] = r_iops
+            dict['read']['runt'] = r_runt
+	
+        #Get Latency
+        # if read is found, initialize real latency
+        # read and write hav same latency ouput, get avg latency only for now
+        elif found_read == 1 and re.search(lat_regex,l):
+            m = re.search(lat_regex,l)
+            # avg latency
+            r_lat = m.group(1)
+            dict['read']['lat'] = r_lat
+        elif found_read == 0 and re.search(lat_regex,l):
+            m = re.search(lat_regex,l)
+            w_lat = m.group(1)
+            dict['write']['lat'] = w_lat
+
+        # Get aggregate bandwidth for read and write
+        elif re.search(regex_agg_read,l):
+            m = re.search(regex_agg_read,l)
+            bw_r = m.group(2)
+            dict['read']['bw'] = bw_r
+        elif re.search(regex_agg_write,l):
+            m = re.search(regex_agg_write,l)
+            bw_w = m.group(2)
+            dict['write']['bw'] = bw_w
+
+        # get write iops
+        elif re.search(write_iops_regex,l):
+            found_read = 0
+            m = re.search(write_iops_regex,l)
+            w_io = m.group(1)
+            w_bw = m.group(2)
+            w_iops = m.group(3)
+            w_runt = m.group(4)
+
+            dict['write']['iops'] = w_iops
+            dict['write']['runt'] = w_runt
+
+
+     return dict
+
+def parse_cat_etc_issue(out):
+	
+	for l in out:
+	   redhat_regex = "(Red Hat Enterprise Linux Server|CentOS)\s+release\s+(\d+)\.?\d*.*"
+           if re.search(redhat_regex,l):
+               m = re.search(redhat_regex,l)
+               redhat_ver = m.group(2)
+	       redhat_str = "redhat" + redhat_ver
+	       return redhat_str
+	   elif re.search("SUSE Linux Enterprise Server 11 SP1",l):
+	       return "sles11sp1"
+	   elif re.search("SUSE Linux Enterprise Server 11 SP2",l):
+	       return "sles11sp2"
+	   elif re.search("Ubuntu 10.04.4 LTS",l):
+	       return "ubuntu1004"
+
+        trace_error("Could not get the version from cat /etc/issue")
+	raise ParseError
+	
+
+def parse_dd_out(o):
+
+       #err = ["No such file or directory"]
+       #trace_info("Running command '%s'"%comm)
+       #o = self.host.run_command(comm)
+       #o = o['output']
+
+       for l in o:
+           regex = "\S+\s+(.*)\|(\S+)\|"
+           if re.search(regex,l):
+               m = re.search(regex,l)
+               patt_hex = m.group(1)
+               patt = m.group(2)
+       try:
+          patt
+       except NameError:
+          trace_error("Variable patt not defined in command '%s'"%comm)
+          raise
+          sys.exit(1)
+       try:
+          patt_hex
+       except NameError:
+          trace_error("Variable patt_hex not defined in command '%s'"%comm)
+
+          raise
+          sys.exit(1)
+
+       return (patt,patt_hex)
+
+
+             
+             
+            
+
+    

@@ -1,0 +1,35 @@
+K 25
+svn:wc:ra_dav:version-url
+V 37
+/svn/!svn/ver/66086/benchmarks/endure
+END
+endure.c
+K 25
+svn:wc:ra_dav:version-url
+V 46
+/svn/!svn/ver/39832/benchmarks/endure/endure.c
+END
+endure1.c
+K 25
+svn:wc:ra_dav:version-url
+V 47
+/svn/!svn/ver/64276/benchmarks/endure/endure1.c
+END
+compare.c
+K 25
+svn:wc:ra_dav:version-url
+V 47
+/svn/!svn/ver/39674/benchmarks/endure/compare.c
+END
+endure-w.c
+K 25
+svn:wc:ra_dav:version-url
+V 48
+/svn/!svn/ver/66086/benchmarks/endure/endure-w.c
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 46
+/svn/!svn/ver/66427/benchmarks/endure/Makefile
+END

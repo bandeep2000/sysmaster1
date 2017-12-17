@@ -1,0 +1,25 @@
+Driver Uptime: 22:10
+Card_Name      Raw_Capacity   Max_FlashModules    Num_Partitions      Status
+/dev/vgcb      3072 GiB       12                  1                   GOOD
+
+  Serial Number   : V1312B00009
+  Card Info       : EMC-M2-LP-2200-A, 3072 GiB
+                    Rev : VFStore 44549, module 44549, x8 Gen2
+  Temperature     : Safe, 52 C
+
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID      Status
+
+  /dev/vgcb0          3072 GiB            2222 GB             enabled   GOOD
+
+    Mode                          : maxcapacity
+    Total Flash Bytes             : 4439263382480145 (4.44PB) (reads)
+                                    387992754766356 (387.99TB) (writes)
+    Remaining Life                : 97.46%
+    Partition State               : READY
+    Spare Left                    : 14 %
+    Num RAID groups               : 24
+    Degraded RAID group List      : none
+    Multi-Failure RAID group List : none
+
+

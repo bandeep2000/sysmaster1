@@ -1,0 +1,10 @@
+          RMAP L0 errors (CE, UE, WE, PErased, IO) : 0 0 0 0 0
+          RMAP L1 errors (CE, UE, WE, PErased, IO) : 0 0 0 0 0
+      META Write errors (Orig, Alt1, Alt2, non-DW) : 0 0 0 0
+    META Read Errors (CE, UE, Erased, PErased, IO) : 0 0 0 0 0
+USB META Read Errors (CE, UE, Erased, PErased, IO) : 0 0 0 0 0
+Superblock error (CE, UE, WE, Erased, PErased, IO) : 0 0 0 0 0 0
+                    HEADER errors (CE, UE, WE, IO) : 0 0 0 0
+                               HEADER erase errors : 0
+                                      Erase errors : 0
+

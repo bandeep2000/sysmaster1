@@ -1,0 +1,25 @@
+
+vgc-monitor: 3.0(44758.trunk)
+
+Driver Uptime: 23:46
+Card_Name      Raw_Capacity   Max_FlashModules    Num_Partitions      Status
+/dev/vgca      3072 GiB       12                  1                   GOOD
+
+  Serial Number   : V1312B00018
+  Card Info       : VIR-M2-LP-2200-2A, 3072 GiB
+                    Rev : FlashMAX 43095, module 43095, x8 Gen2
+  Temperature     : Safe, 58 C
+
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID      Status
+  /dev/vgca0          3072 GiB            2222 GB             enabled   GOOD
+
+    Mode                          : maxcapacity
+    Total Flash Bytes             : 234036849160704 (234.04TB) (reads)
+                                    381159326875144 (381.16TB) (writes)
+    Remaining Life                : 99.29%
+    Partition State               : READY
+    Spare Left                    : 14 %
+    Num RAID groups               : 24
+    Degraded RAID group List      : none
+    Multi-Failure RAID group List : none

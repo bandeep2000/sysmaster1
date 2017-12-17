@@ -1,0 +1,183 @@
+<html>
+<head>
+<title>Virident  FlashMax II SQA Performance Charts </title>
+
+<link rel="stylesheet" href="css/style.css" type="text/css" />
+<link rel="stylesheet" href="css/style1.css" type="text/css" />
+<script src="js/jquery.min.js" type="text/javascript"></script>
+<script src="js/exporting.js" type="text/javascript"></script>
+<script src="js/highcharts.js" type="text/javascript"></script>
+<script src="js/script.js" type="text/javascript"></script>
+<script type="text/javascript">
+$(function(){
+var chart = new Highcharts.Chart({
+  chart: {
+     renderTo: 'container1',
+     zoomType: 'xy'
+  },
+  title: {
+     text: 'Bandwidth IOPS and Latency for for bs=16384 , Write%=50 , Test=SUST8K '
+  },
+  subtitle: {
+     text: 'Source: Systems QA Performance DATA'
+  },
+  xAxis: [{
+     labels: {
+        formatter: function() {
+           return this.value+' Thread';
+        },
+        style: {
+           color: '#4572A7'
+        }
+     },
+
+     categories: [1,2,4,6,8,12,16,32,64,256 ]
+  }],
+  yAxis: [{ // Primary yAxis
+     labels: {
+        formatter: function() {
+           return this.value+' IOPS';
+        },
+        style: {
+           color: '#4572A7'
+        }
+     },
+     title: {
+        text: 'IOPS',
+        style: {
+           color: '#4572A7'
+        }
+     },
+     opposite: true
+
+  }, { // Secondary yAxis
+     gridLineWidth: 0,
+     title: {
+        text: 'Latency',
+        style: {
+           color: '#4572A7'
+        }
+     },
+     labels: {
+        formatter: function() {
+           return this.value+' µs';
+        },
+        style: {
+           color: '#4572A7'
+        }
+     }
+
+  }, { // Tertiary yAxis
+     gridLineWidth: 0,
+     title: {
+        text: 'Bandwidth',
+        style: {
+           color: '#4572A7'
+        }
+     },
+     labels: {
+        formatter: function() {
+            return this.value+' MB/s';
+        },
+        style: {
+           color: '#4572A7'
+        }
+     },
+     opposite: true
+  }],
+
+  tooltip: {
+                formatter: function() {
+                    var unit = {
+                        'IOPS EP-RHEL62': ' IOPS',
+                        'Latency EP-RHEL62': ' µs',
+                        'Bandwidth EP-RHEL62': ' MB/s',
+                        'IOPS EX-RHEL62': ' IOPS',
+                        'Latency EX-RHEL62': ' µs',
+                        'Bandwidth EX-RHEL62': ' MB/s'
+
+                    }[this.series.name];
+
+                    return ''+
+                        this.x +': '+ this.y +' '+unit;
+                }
+            },
+  legend: {
+     layout: 'vertical',
+     align: 'left',
+     x: 120,
+     verticalAlign: 'top',
+     y: 80,
+     floating: true,
+     backgroundColor: '#FFFFFF'
+  },
+  series: [{
+     name: 'Latency EP-RHEL62',
+     color: '#89A54E',
+     type: 'column',
+     yAxis: 1,
+     data: [ 297.62,394.98,539.06,659.75,758.86,947.56,1102.82,1713.03,2901.17,11132.06 ]
+
+
+  },
+ {
+     name: 'Latency EX-RHEL62',
+     color: '#AA4643',
+     type: 'column',
+     yAxis: 1,
+     data: [355.03,456.94,589.03,688.16,807.10,1016.21,1177.77,1790.47,2972.39,11707.39]
+
+
+  },
+
+    {
+     name: 'Bandwidth EP-RHEL62',
+     type: 'spline',
+     color: '#89A54E',
+     yAxis: 2,
+     data: [109,164,241,296,344,413,473,610,721,752  ],
+     marker: {
+        enabled: false
+     },
+     dashStyle: 'shortdot'
+
+  },{
+     name: 'Bandwidth EX-RHEL62',
+     type: 'spline',
+     color: '#AA4643',
+     yAxis: 2,
+     data: [90,141,220,283,322,384,442,583,703,716 ],
+     marker: {
+        enabled: false
+     },
+     dashStyle: 'shortdot'
+
+  },
+
+  {
+     name: 'IOPS EP-RHEL62',
+     color: '#89A54E',
+     type: 'spline',
+     data: [6653,10048,14743,18092,21010,25239,28910,37273,44053,45952 ]
+  },
+{
+     name: 'IOPS EX-RHEL62',
+     color: '#AA4643',
+     type: 'spline',
+     data: [5531,8644,13455,17312,19673,23468,26999,35603,42918,43703]
+  }
+
+]
+});
+});
+
+</script>
+
+</script>
+</head>
+<body>
+
+<div id='container1' ></div>
+
+</body>
+</html>

@@ -1,0 +1,21 @@
+  --- Volume group ---
+  VG Name               V1
+  System ID
+  Format                lvm2
+  Metadata Areas        1
+  Metadata Sequence No  2
+  VG Access             read/write
+  VG Status             resizable
+  MAX LV                0
+  Cur LV                1
+  Open LV               0
+  Max PV                0
+  Cur PV                1
+  Act PV                1
+  VG Size               2.02 TiB
+  PE Size               4.00 MiB
+  Total PE              529871
+  Alloc PE / Size       2560 / 10.00 GiB
+  Free  PE / Size       527311 / 2.01 TiB
+  VG UUID               Z58ki2-J23D-JQTC-2eIS-tA02-oeKN-9fsz2l
+

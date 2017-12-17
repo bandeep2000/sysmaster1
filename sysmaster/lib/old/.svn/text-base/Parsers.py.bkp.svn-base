@@ -1,0 +1,127 @@
+#!/usr/bin/python
+import re,sys
+
+# Set device regex
+DEV_RE = "(\/dev\/vgc[a-z])"
+# set device regex with partition
+DEV_RE_PART = "(\/dev\/vgc[a-z]\d+)"
+
+def parse_lines(output_str):
+    output_a = output_str.split("\r\n")
+    return output_a
+
+
+def parse_vga_monitor(output):
+    vgc_mon_regex       = "(vgc-monitor):\s+(\S+)"
+    card_part_det_regex = DEV_RE_PART + "\s+(\d+)\s+GiB\s+(\d+)\s+GB\s+(enabled|disabled)\s+(\S+)"
+    # card partition regex
+    card_part_regex     = DEV_RE + "\s+(\d+)\s+GiB\s+(\d+)\s+(\S+)"
+    temp_regex          = "Temperature\s+:(.*)"
+    err_regex           = "ERROR:(.*)"
+    serial_regex        = "Serial Number\s+:\s+(\S+)"
+    mode_regex          = "Mode\s+:\s+(\S+)"
+    remain_life         = "Remaining Life\s+:\s+(\S+)%"
+    part_state          = "Partition State\s+:(\S+)"
+    daut_brd_regex      = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(\d\s\d\s\d\s\d)\s+(\S+)"
+    #print card_part_regex
+    
+    for l in output:
+         if re.search(vgc_mon_regex,l):
+             m = re.search(vgc_mon_regex,l)
+             print m.group(2)
+
+         if re.search(card_part_det_regex,l):
+             m = re.search(card_part_det_regex,l)
+             print m.group(2)
+         if re.search(card_part_regex,l):
+             m = re.search(card_part_regex,l)
+             print m.group(2)
+         if re.search(serial_regex,l):
+             m = re.search(serial_regex,l)
+             print m.group(1)
+
+         if re.search(remain_life,l):
+             m = re.search(remain_life,l)
+             print m.group(1)
+
+         if re.search(daut_brd_regex,l):
+             m = re.search(daut_brd_regex,l)
+             print m.group(1)
+
+# returns {'read': {'bw_r': '659708', 'r_iops': '164927', 'r_lat': '866.50', 'r_runt': '2005'}, 
+# 'write': {'bw_w': '662609', 'w_lat': '702.07', 'w_runt': '2005', 'w_iops': '165652'}}
+def parse_fio_output(output):
+
+     # Match read : io=1928.9MB, bw=657279KB/s, iops=164319 , runt=  3005msec
+     read_iops_regex = "read\s+:\s+io=(\d+\.\d+)MB,\s+bw=(\d+)KB/s,\s+iops=(\d+)\s+,\s+runt=\s+(\d+)msec"
+     write_iops_regex = "write\s*:\s+io=(\d+\.\d+)MB,\s+bw=(\d+)KB/s,\s+iops=(\d+)\s+,\s+runt=\s+(\d+)msec"
+
+     # lat (usec): min=56 , max=10607 , avg=816.75, stdev=55.13
+     lat_regex = "lat\s+\(usec\):\s+min=\d+\s+,\s+max=\d+\s+,\s+avg=(\d+\.\d+)\s*,\s+stdev=\d+\.\d+"
+
+     # READ: io=1928.9MB, aggrb=657279KB/s, minb=673053KB/s, maxb=673053KB/s, mint=3005msec, maxt=3005msec
+     regex_agg_read = "READ:\s+io=(\d+\.\d+)MB,\s+aggrb=(\d+)KB/s,.*"
+     regex_agg_write = "WRITE:\s+io=(\d+\.\d+)MB,\s+aggrb=(\d+)KB/s,.*"
+
+     dict = {}
+
+     dict['read']  = {}
+     dict['write'] = {}
+
+     found_read = 0
+    
+     for l in output:
+        # read iops
+        if re.search(read_iops_regex,l):
+            found_read = 1
+            m = re.search(read_iops_regex,l)
+
+            # get iops and runtime only
+            r_iops = m.group(3)
+            r_runt = m.group(4) # run time
+
+            dict['read']['iops'] = r_iops
+            dict['read']['runt'] = r_runt
+
+        #Get Latency
+        # if read is found, initialize real latency
+        # read and write hav same latency ouput, get avg latency only for now
+        if found_read == 1 and re.search(lat_regex,l):
+            m = re.search(lat_regex,l)
+            # avg latency
+            r_lat = m.group(1)
+            dict['read']['lat'] = r_lat
+        if found_read == 0 and re.search(lat_regex,l):
+            m = re.search(lat_regex,l)
+            w_lat = m.group(1)
+            dict['write']['lat'] = w_lat
+
+        # Get aggregate bandwidth for read and write
+        if re.search(regex_agg_read,l):
+            m = re.search(regex_agg_read,l)
+            bw_r = m.group(2)
+            dict['read']['bw'] = bw_r
+        if re.search(regex_agg_write,l):
+            m = re.search(regex_agg_write,l)
+            bw_w = m.group(2)
+            dict['write']['bw'] = bw_w
+
+        # get write iops
+        if re.search(write_iops_regex,l):
+            found_read = 0
+            m = re.search(write_iops_regex,l)
+            w_io = m.group(1)
+            w_bw = m.group(2)
+            w_iops = m.group(3)
+            w_runt = m.group(4)
+
+            dict['write']['iops'] = w_iops
+            dict['write']['runt'] = w_runt
+
+
+     return dict
+             
+             
+            
+
+    

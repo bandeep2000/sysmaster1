@@ -1,0 +1,189 @@
+from ViriImports import *
+"""
+Example Script:
+    
+#!/usr/bin/python
+from Host import Host
+from VgcMon import *
+from Temperature import *
+import sys
+
+h = Host(sys.argv[1])
+h.logon()
+
+t = tempSim(h)
+t.enableTemperatureSim()
+t.setTemperature("50","/dev/vgca")
+t.resetTemperature("/dev/vgca")
+
+vgc-monitor: 3.0(49400.C5)
+
+Driver Uptime: 0:02
+Card_Name      Raw_Capacity   Num_Partitions      Status
+/dev/vgca      3072 GiB       1                   Warning
+
+  Serial Number      : V1312B00012
+  Card Info          : EMC-M2-LP-2200-2A, 3072 GiB
+                       Rev : VFStore 47955, module 47956, x8 Gen2
+  Temperature        : 85 C (Needs Attention)
+  Card State Details : Card was shut down because of high temperature
+  Action Required    : Use "service vgcd restart" to bring the partition/card online
+
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID
+  Error:  State ADMIN OFFLINE, ec 8
+  /dev/vgca0          3072 GiB            unknown             unknown
+
+    Mode                          : unknown
+    Total Flash Bytes             : 645739704183808 (645.74TB) (reads)
+                                    579772324478976 (579.77TB) (writes)
+    Remaining Life                : 96.13%
+    Partition State               : ADMIN OFFLINE
+    Flash Reserves Left           : 100.00%
+
+### card after 83 output
+sqa11:~ # vgc-monitor -d /dev/vgca
+vgc-monitor: 3.0(49400.C5)
+
+Driver Uptime: 0:01
+Card_Name      Raw_Capacity   Num_Partitions      Status
+/dev/vgca      3072 GiB       1                   Warning
+
+  Serial Number      : V1312B00012
+  Card Info          : EMC-M2-LP-2200-2A, 3072 GiB
+                       Rev : VFStore 47955, module 47956, x8 Gen2
+  Temperature        : 83 C (Needs Attention)
+  Card State Details : Maximum allowed temperature exceeded. The card will be shut down soon
+  Action Required    : Improve airflow. Consider changing system BIOS settings to increase fan speed or using different PCI slot
+
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID
+  /dev/vgca0          3072 GiB            2222 GB             enabled
+
+    Mode                          : maxcapacity
+    Total Flash Bytes             : 645746060443648 (645.75TB) (reads)
+                                    579772355411968 (579.77TB) (writes)
+    Remaining Life                : 96.13%
+    Partition State               : READY
+    Flash Reserves Left           : 100.00%
+
+"""
+
+UPPERTHRESHOLD = "85"
+LOWERTHRESHOLD = "83"
+DEVOFFLINESTATE = "NEEDS ATTENTION [TTEO]"
+PARTOFFLINESTATE = "OFFLINE [TTEO]"
+
+class tempSim:
+   def __init__(self,host):
+       
+       self.host = host
+       self.enabledTemp = 0
+       
+   def enableTemperatureSim(self):
+    
+        """enables temperature simulation on machine """
+        #if not self.host.ifVgcRpmLoaded("stats"):
+        #   trace_info("Stat rpm not loaded for temperature simulation,trying to install")
+           
+        #   self.host.installBuildStatsSame()
+    
+        self.host.stopVgcDriver()
+        self.host.run_command_chk_rc("modprobe vgcport sim_gw_temperature=1")
+        self.host.startVgcDriver()
+        o = self.host.run_command_chk_rc("cat /sys/module/vgcport/parameters/sim_gw_temperature")
+    
+        out = o['output']
+    
+        rc = out[1]
+        
+        # 1 is the expected value if temperature simulation enable
+        # went fine
+        expectedValue = "1"
+        
+        # compare rc with expected value
+        compareStr(expectedValue,rc,"Temperature simulation configuration")
+    
+        trace_info("Temperatured simulation configured fine")
+    
+        self.enabledTemp = 1
+        return 1
+    
+   def setTemperature(self,temp,device):
+       
+        #if self.enabledTemp == 0:
+        #    trace_error("Temperature enable not set to simulate temperature")
+        #    sys.exit(1)
+       
+        drvLetter= get_device_letter(device)
+        cmd = "echo \"%s\" | %s -w /proc/driver/virident/vgcport%s/gwtemp"%(temp,VGCPROC,drvLetter)
+        self.host.run_command_chk_rc(cmd)
+        cmd =  "%s /proc/driver/virident/vgcport%s/gwtemp"%(VGCPROC,drvLetter)
+        
+        # had to use no rc, since return code is messed up
+        foundTemp =  self.host.run_command_no_rc(cmd)[1]
+        # this is another hack as ouput was 50x000......
+        m = re.search("(\d+)",foundTemp)
+        try:
+           foundTemp1 = m.group(1)
+        except:
+           trace_error("Coudn't get the temperture from string '%s'"%foundTemp)
+           sys.exit(1)
+        
+        compareStr(temp,foundTemp1,"Temperature simulation")
+    
+   def resetTemperature(self,device):
+       
+       self.setTemperature("0",device)
+       return 1
+   
+   def cardOffline(self,device,partition = "0", temp = UPPERTHRESHOLD, wait = 60 ):
+       
+       if temp < LOWERTHRESHOLD:
+           raise ViriValuePassedError("Temperature passed is below lower threshold '%s'"%temp)
+           sys.exit(1)
+           
+       self.setTemperature(temp,device)
+       
+       vm = vgcMonitor(self.host)
+       
+       devPart = device + partition
+       #print devPart
+       #sys.exit(1)
+       devState,partState = vm.getDevStatus(devPart)
+       
+       #sleep_time(wait,"after configuring tempartue simulation '%s'"%temp)
+       
+       if temp >= LOWERTHRESHOLD and temp < UPPERTHRESHOLD:
+           trace_info("Temperature for simulation seem to be passed between low and upperthreshold")
+           # 29 minutes
+           for i in range(1,30):
+               trace_info("Trying iteration '%i' to see if card in GOOD condition"%i)
+               devState,partState = vm.getDevStatus(devPart)
+               compareStr("GOOD",devState,"Card temp offline state")
+               compareStr("GOOD",partState,"Part temp offline state")
+               sleep_time(60,"after configuring temp below threshold count '%i'"%i)
+           
+       for i in range(0,4):
+               trace_info("Trying iteration '%i' to see if card is not in good condition"%i)
+               devState,partState = vm.getDevStatus(devPart)
+               try:
+                  compareStr(DEVOFFLINESTATE,devState,"Card temp offline state")
+                  compareStr(PARTOFFLINESTATE,partState,"Part temp offline state")
+                  return 1
+               except:
+                  trace_info("Seem like card is still in GOOD condition,retrying...")
+                  sleep_time(60,"after conifuring temp count '%i'"%i)
+                  continue
+               
+       
+       trace_error("Seems like card still in good condition after simulating offline")
+       sys.exit(1)
+       
+       
+       
+        
+        
+        
+    
+

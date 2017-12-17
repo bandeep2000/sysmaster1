@@ -1,0 +1,34 @@
+
+vgc-monitor: 3.0(trunk.41954)
+
+Card_Name      Raw_Capacity   Max_FlashModules    Num_Partitions      Status
+/dev/vgca      768 GiB        6                   1                   GOOD
+
+  Serial Number   :
+  Card Info       : VIR-M2-LP-550-2A, 768 GiB
+                    Rev : FlashMAX 41100, module 41100, x8 Gen2
+  Temperature     : Safe, 40 C
+
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID      Status
+  /dev/vgca0          768 GiB             555 GB              enabled   GOOD
+
+    Mode                          : maxcapacity
+    Garbage Collection Impact     : Low
+    Total Flash Bytes             : 145609565127680 (145.61TB) (reads)
+                                    204025546776576 (204.03TB) (writes)
+    Remaining Life                : 95.27%
+    Partition State               : READY
+    Num RAID groups               : 12
+    Degraded RAID group List      : none
+    Multi-Failure RAID group List : none
+
+    Flash     Max       Life_Left   Status
+    Module ID Capacity  (cycles)
+    0         128 GiB   95.34%      GOOD
+    1         128 GiB   95.29%      GOOD
+    2         128 GiB   95.31%      GOOD
+    3         128 GiB   95.28%      GOOD
+    4         128 GiB   95.27%      GOOD
+    5         128 GiB   95.28%      GOOD
+

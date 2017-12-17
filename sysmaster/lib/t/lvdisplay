@@ -1,0 +1,17 @@
+  --- Logical volume ---
+  LV Name                /dev/V1/LV1
+  VG Name                V1
+  LV UUID                UqZkkI-U77A-OSOx-Ii5u-WlIh-URzt-W0dpp6
+  LV Write Access        read/write
+  LV Status              available
+  # open                 0
+  LV Size                10.00 GiB
+  Current LE             2560
+  Segments               1
+  Allocation             inherit
+  Read ahead sectors     auto
+  - currently set to     3072
+  Block device           253:0
+
+
+

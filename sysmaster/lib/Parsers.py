@@ -1,0 +1,1163 @@
+#!/usr/bin/python
+import re,sys
+from card import *
+from Trace import *
+from Util import *
+from Variables import *
+
+FLOATINGPOINT = "\d+\.?\d*"
+
+# Adding lines for dinwds
+#DEV_RE = "(vgc[a-z])"
+# set device regex with partition
+#DEV_RE_PART = "(vgc[a-z]\d+)"
+
+class ParseError(Exception):
+   pass
+   
+def parse_lines(output_str):
+    output_a = output_str.split("\r\n")
+    return output_a
+
+def parseSplit(output,delimit = ":",add_underscore = 0):
+    
+    dict = {}
+    for l in output:
+        if re.search(".*%s.*"%delimit,l):
+          l_a = l.split(delimit)
+          key = l_a[0].strip()
+          value = l_a[1].strip()
+          
+          if add_underscore:
+            key = util_string_add_underscore_lowercase(key)
+          dict[key] = value
+    return dict
+
+def getSingleSplitRight(line,delimit = ":"):
+    
+    dict = {}
+   
+    l_a = line.split(delimit)
+    
+    try:
+       key = l_a[0].strip()
+       value = l_a[1].strip()
+    except IndexError:
+       raise IndexError ("Couldnt split '%s'"%line)  
+       
+    return value
+    #return dict
+
+def parse_dmidecode(output):
+   
+   """ returns Machine type and model as tuple
+   example:
+   ('HP', 'ProLiant DL380p Gen8')
+   """
+   
+   dict1 = parseSplit(output,delimit = ":",add_underscore = 1)
+   
+   manufacturer = dict1['manufacturer']
+   model        = dict1['product_name']
+   return manufacturer,model
+   pass
+        
+def parseRetention(output):
+    """ takes output to parse as input, return dictionary and array with values for retention
+    Example:
+    ({'4000-5000': '259200', '7000-8000': '86400', '6000-7000': '172800', '2000-3000': '1209600', 
+    #'0-2000': '1209600', '5000-6000': '259200', '8000-2000000': '86400', 
+    #'3000-4000': '604800'},
+    # ['1209600', '1209600', '604800', '259200', '259200', '172800', '86400', '86400'])    """
+    #matches #EC low:0 EC High:2000 threshold:1209600
+    regex = "EC low:(\d+)\s+EC High:(\d+) threshold:\s*(\d+)"
+    
+    dict = {}
+    values = []
+    for l in output:
+        if re.search(regex,l):
+            m = re.search(regex,l)
+            lthreshold = m.group(1)
+            hthreshold = m.group(2)
+            retention = m.group(3)
+            
+            values.append(retention)
+            # create 0-2000 as example
+            tholdRange = "%s-%s"%(lthreshold,hthreshold)
+            dict[tholdRange] = retention
+    
+    # ({'4000-5000': '259200', '7000-8000': '86400', '6000-7000': '172800', '2000-3000': '1209600', 
+    #'0-2000': '1209600', '5000-6000': '259200', '8000-2000000': '86400', 
+    #'3000-4000': '604800'},
+    #    ['1209600', '1209600', '604800', '259200', '259200', '172800', '86400', '86400'])
+
+    return dict,values
+		   
+def parse_mdadm_detail(output):
+    
+    """ {'Chunk Size': '64K', 'Working Devices': '2', 'Raid Devices': '2', 'Raid Level': 'raid0', 'Update Time': 'Sat Oct 20 15', 'Creation Time': 'Sat Oct 20 15', 'devices': ['/dev/vgca0', '/dev/vgcb0'], 'UUID': 'c17c862a', 'Array Size': '2254937984 (2150.48 GiB 2309.06 GB)', 'Failed Devices': '0', 'State': 'clean', 'Version': '0.90', 'Events': '0.1', 'Persistence': 'Superblock is persistent', 'Spare Devices': '0', 'Active Devices': '2', 'Total Devices': '2', 'Preferred Minor': '0'}
+    """
+    		    
+    dict = parseSplit(output)
+    
+    devParts = []
+    
+    for l in output:
+         #print l
+         #0     252        0        0      active sync   /dev/vgca0
+         if re.search("(\d+\s+){4}.*(%s)"%DEV_RE_PART,l):
+             #print l
+             m = re.search("(\d+\s+){4}.*(%s)"%DEV_RE_PART,l)
+             #print devPart
+             devPart = m.group(2)
+             devParts.append(devPart)
+    
+    dict['devices'] = devParts
+    
+    size = dict['Array Size']
+    m = re.search("\d+\s+\(\d+\.\d+\s+GiB\s+(\d+\.?\d*)\s+GB\)",size)
+    
+    size =  m.group(1)
+    
+    dict['size'] = size
+    return dict
+         
+def parse_fdparm_output(output):
+    
+    return parseSplit(output)
+
+def parse_vgc_monitor(output):
+    vgc_mon_build       = "(vgc-monitor):\s+(\S+)"
+    driver_uptime_regex = "Driver Uptime:\s+((\d+ days\s+)?\d+:\d+)"
+    
+    # /dev/vgca      1                   VIR-M2-LP-2200-2A Good
+    card_part_regex     = DEV_RE + "\s+(\d+)\s+(\S+)\s+(.*)"
+
+    # parse second line
+    #   /dev/vgca0          2222 GB             enabled
+    card_part_det_regex = DEV_RE_PART + "\s+(\d+\s+GB|unknown)\s+(\S+)"
+    
+    temp_regex          = "Temperature\s*:\s*(\d+)\s+C\s*\((.*)\)"
+    err_regex           = "ERROR:\s+(.*)"
+    serial_regex        = "Serial Number\s+:\s+(\S+)"
+    spare_left          = "Spare Left\s+:\s*(\d+)\s+%"
+    mode_regex          = "Mode\s+:\s+(\S+)"
+    remain_life         = "Remaining Life\s+:\s+(\S+)%"
+    part_state          = "Partition State\s+:(.*)"
+    daut_brd_regex      = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(\d\s\d\s\d\s\d)\s+(.*)"
+    card_info           = "Card Info\s+:\s+(.*)"
+    readRegex           = "(\d+)\s+\((\S+)\)\s+\(reads\)"
+    writeRegex          = "(\d+)\s+\((\S+)\)\s+\(writes\)"
+    actionRequired      = "Action Required\s+:\s*.*"
+    cardStateDetails    = "Card State Details\s+:\s*.*"
+    flashReserversLeft  = "Flash Reserves Left\s+:\s*.*"
+    
+    #     Num RAID groups               : 12
+    #Degraded RAID group List      : none
+    #Multi-Failure RAID group List : none
+    
+    numRaidGroups_regex        =  "Num RAID groups\s+:\s+(\d+)"
+    degradedRaidGroup_regex    =  "Degraded RAID group List\s+:\s+(none)"
+    multiFailureRaidGroup_regex =  "Multi-Failure RAID group List\s+:\s+(none)"
+    #revRegex                 =   "Rev\s+:\s+(Flash[mM][aA][xX]|VFStore)\s+(\d+)\s*,\s+module\s+\d+,\s+(x\d+)\s+(Gen\d+)"
+    # they keep changing flaxmax putting \S+
+    #revRegex                 =   "Rev\s+:\s+(vPCIe SSD|FlashMax II|FlashMax V2|\S+)\s+(\d+)\s*,\s+module\s+\d+,\s+(x\d+)\s+(Gen\d+)"
+    # Rev : vPCIe SSD 51063, x8 Gen2
+    revRegex             =  "\s*Rev\s+:\s+(vPCIe SSD|FlashMax II|FlashMax" \
+                            " V2|FlashMAX \S+|X8 Accelerator|\S+)\s+(\d+)\s*,\s+(x\d+)\s+(Gen\d+)"
+    bootrom_regex = "Boot ROM\s+:\s+(\d+),\s*.*"
+    bootable_regex = "Boot ROM\s+:\s+\d+,\s+(.*)"
+    bootromNotPresent_regex = "Boot ROM\s+:\s+(.*)"
+    temp_throttle = "Temp Throttle\s*:\s*(.*)"
+    
+
+
+    #zion_dbs            = "    0         128 GiB   98.86%       --                   GOOD      "
+    #zion_dbs_regex      = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(--)\s+(.*)"
+    zion_dbs_regex       = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(.*)"
+    #print card_part_regex
+    
+    card_det = {}
+    card_part = ""
+    part  = {} # temporary dict to hold vgca1 partition details
+    db = {} # temp dict to hold daughter board 
+    
+    foundPart = 0
+    foundMode = 0
+    for l in output:
+
+         if re.search(vgc_mon_build,l):
+             m = re.search(vgc_mon_build,l)
+             build = m.group(2)
+             card_det['build'] = build
+         elif re.search(bootrom_regex,l):
+             m = re.search(bootrom_regex,l)
+             bootrom = m.group(1)
+             card_det['boot_rom'] = bootrom
+             m = re.search(bootable_regex,l)
+             bootable = m.group(1)
+             card_det['bootable'] = bootable
+         elif re.search(bootromNotPresent_regex,l):
+             m = re.search(bootromNotPresent_regex,l)
+             bootrom = m.group(1)
+             card_det['boot_rom'] = bootrom
+             card_det['bootable'] = m.group(1) 
+	 elif re.search(revRegex,l):
+	     g = re.search(revRegex,l)
+	     rtl = g.group(2)
+	     pcilanes = g.group(3)
+	     pcigen = g.group(4)
+		#print rtl,
+		#print pcilanes,
+		#print pcigen,
+	     card_det['rtl'] = rtl
+	     card_det['pcilanes'] = pcilanes
+	     card_det['pcigen'] = pcigen
+		
+
+         elif re.search(driver_uptime_regex,l):
+             m = re.search(driver_uptime_regex,l)
+             d_uptime = m.group(1)
+             #print d_uptime
+             card_det['d_uptime'] = d_uptime
+         elif re.search(temp_regex,l):
+             m = re.search(temp_regex,l)
+             card_det['temp'] = m.group(1)
+             card_det['temp_s'] =  m.group(2)
+	 elif re.search(temp_throttle,l):
+             m = re.search(temp_throttle,l)
+             card_det['temp_throttle'] =  m.group(1)
+         
+         elif re.search(cardStateDetails,l):
+             card_det['cardStateDetails'] = getSingleSplitRight(l)
+         elif re.search(actionRequired,l):
+             card_det['actionRequired']= getSingleSplitRight(l)
+             #print getSingleSplitRight(l)
+             #sys.exit(1)
+             
+         elif re.search(card_info,l):
+             m = re.search(card_info,l)
+             # TO DO Card info changed to 
+             # /dev/vgca      1                   VIR-M2-LP-2200-2A Good
+             # this line is giving 
+             # Card Info          : Part: SJ896429
+             #card_det['card_info'] = m.group(1)
+         elif re.search(err_regex,l):
+             m = re.search(err_regex,l)
+             card_det['err'] = m.group(1)
+         
+         elif re.search(card_part_regex,l):
+             m = re.search(card_part_regex,l)
+             card = m.group(1)
+             card_det[card] = {}
+             #state = m.group(4)
+             #latest build
+             # TO DO , please see card info, putting card type as info
+             # since this was the implementation before
+             card_det['card_info'] = m.group(3)
+             state = m.group(4)
+             card_det['state'] = state
+         # partition details,state , mode
+         elif re.search(card_part_det_regex,l):
+             m = re.search(card_part_det_regex,l)
+             card_part =  m.group(1)
+             
+             #latest build
+             # TO DO raw cap, need to be removed
+             # this is giving raid
+             card_part_rcap = m.group(3)
+             card_part_ucap = m.group(2)
+             
+             # remove GB
+             #print card_part_ucap
+             #sys.exit(1)
+             card_part_ucap = getInteger(card_part_ucap)
+             
+             #latest build
+             card_part_raid = m.group(3)
+             #card_part_state =  m.group(5)
+
+             # this will be initialized here and will used later
+             part[card_part] = {}
+             #part[card_part]['state'] = card_part_state
+             #rd_det[card_part]['part'] = part
+             part[card_part]['raid'] = card_part_raid
+             part[card_part]['rcap'] = card_part_rcap
+             part[card_part]['ucap'] = card_part_ucap
+             card_det['part'] = part
+             foundPart = foundPart + 1 # found the first partition
+             
+	 elif re.search(numRaidGroups_regex,l):
+		 m = re.search(numRaidGroups_regex,l)
+		 part[card_part]['raidgrps'] = m.group(1)
+         elif re.search(degradedRaidGroup_regex,l):
+		 m = re.search(degradedRaidGroup_regex,l)
+		 part[card_part]['degraidgrps'] = m.group(1)
+         elif re.search(multiFailureRaidGroup_regex,l):
+		 m = re.search(multiFailureRaidGroup_regex,l)
+		 part[card_part]['mfailureraidgrps'] = m.group(1)
+         
+         elif re.search(part_state,l):
+		 m = re.search(part_state,l)
+		 part[card_part]['partState'] = m.group(1).strip()
+         
+         elif re.search(readRegex,l):
+             m = re.search(readRegex,l)
+             part[card_part]['read'] = m.group(1)
+             part[card_part]['read_tb'] = m.group(2)
+         elif re.search(writeRegex,l):
+             m = re.search(writeRegex,l)
+             part[card_part]['write'] = m.group(1)
+             part[card_part]['write_tb'] = m.group(2)
+
+         elif re.search(serial_regex,l):
+             m = re.search(serial_regex,l)
+             card_det['serial'] =  m.group(1)
+         elif re.search(mode_regex,l):
+             
+             m = re.search(mode_regex,l)
+             #print m.group(1)
+             if foundPart == 0:
+                 trace_error("Did not find the partition regex in the output, mode called first")
+                 sys.exit(1)
+                 
+             part[card_part]['mode'] = m.group(1)
+             card_det['part'] = part
+             
+             # mode is the first string after dev Part
+             # initialize it here, this logic needs to be improved
+             
+             foundMode = foundMode + 1
+             
+             # this will be helpful, if for the second partition dev detail
+             # string is missing
+             if foundMode != foundPart:
+                 trace_error("Found mode '%i' is not equal found part '%i'"%(foundMode,foundPart))
+                 sys.exit(1)
+                 
+         elif re.search(spare_left,l):
+             m = re.search(spare_left,l)
+             part[card_part]['spareLeft'] = m.group(1)
+             card_det['part'] = part
+        
+         elif re.search(flashReserversLeft,l):
+             m = re.search(spare_left,l)
+             part[card_part]['flashReserveLeft'] = getSingleSplitRight(l)
+             #card_det['part'] = part
+
+         elif re.search(remain_life,l):
+             m = re.search(remain_life,l)
+             part[card_part]['life'] = m.group(1)
+             card_det['part'] = part
+             #print m.group(1)
+         #daut_brd_regex = 
+         #"(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(\d\s\d\s\d\s\d)\s+(.*)"
+
+         if re.search(daut_brd_regex,l):
+             m = re.search(daut_brd_regex,l)
+             db_no = m.group(1)
+             db[db_no] = {}
+             db[db_no]['cap'] = m.group(2)
+             db[db_no]['life'] = m.group(3)
+             db[db_no]['rgrp'] = m.group(4)
+             db[db_no]['state'] = m.group(5)
+             part[card_part]['db'] = db
+         #zion_dbs            = "    0         128 GiB   98.86%       --                   GOOD      "
+         #zion_dbs_regex       = "(\d+)\s+(\d+)\s+GiB\s+(\d+\.\d+)%\s+(\S+)\s+(.*)"
+         if re.search(zion_dbs_regex,l): 
+             m = re.search(zion_dbs_regex,l)
+             db_no = m.group(1)
+             db[db_no] = {}
+             db[db_no]['cap'] = m.group(2)
+             db[db_no]['life'] = m.group(3)
+             #db[db_no]['rgrp'] = m.group(4)
+             db[db_no]['state'] = m.group(4)
+             part[card_part]['db'] = db
+
+    return card_det
+
+def get_vgc_mon_d_attr(output,attr):
+   return parse_vgc_monitor(output)[attr]
+# get partition attribute
+# rint get_vgc_mon_d_part_attr(vgc_mond_output,"/dev/vgca0","mode")
+def get_vgc_mon_d_part_attr(output,device,attr):
+   return parse_vgc_monitor(output)['part'][device][attr]
+
+def chk_if_key_exists(dict,key,dict_details):
+    if dict.has_key(key):
+	val = dict[key]
+	trace_info("key '%s' exists in %s with value '%s'"%(key,dict_details,val))
+	return True
+    trace_error("key '%s' doesn't exists in %s"%(key,dict_details))
+    return False
+    sys.exit(1)
+
+def parse_pvdisplay(output):
+	#doing vgname and pvname as of now only
+	
+	parsed_output = {}
+	for l in output:
+		if re.search("PV Name\s+(\S+)",l):
+			m = re.search("PV Name\s+(\S+)",l)
+			parsed_output['device'] = m.group(1)
+	        if re.search("VG Name\s+(\S+)",l):
+		        m = re.search("VG Name\s+(\S+)",l)
+			parsed_output['vgname'] = m.group(1)
+		
+	return parsed_output
+
+def parse_vgdisplay(output):
+	
+	parsed_output = {}
+	for l in output:
+		
+	        if re.search("VG Name\s+(\S+)",l):
+		        m = re.search("VG Name\s+(\S+)",l)
+			parsed_output['vgname'] = m.group(1)
+		
+	return parsed_output
+
+def parse_lvdisplay(output):
+	
+	parsed_output = {}
+	for l in output:
+		
+	        if re.search("LV Name\s+(\S+)",l):
+		        m = re.search("LV Name\s+(\S+)",l)
+			parsed_output['lvname'] = m.group(1)
+	        if re.search("VG Name\s+(\S+)",l):
+		        m = re.search("VG Name\s+(\S+)",l)
+			parsed_output['vgname'] = m.group(1)
+		
+	        if re.search("LV Size\s+(\S+\s+\S+)",l):
+		        m = re.search("LV Size\s+(\S+\s+\S+)",l)
+			parsed_output['lvsize'] = m.group(1)
+	return parsed_output
+
+def verify_vgc_monitor_zion(output):
+    #print output
+    part_dict = output['part']
+    #print part_dict
+    #get partitions from part_dict
+    partitions = part_dict.keys()
+    
+    #partion keys'mfailureraidgrps'
+    part_keys = ['raid','read','read_tb','ucap','mode','write','write_tb','life',
+                   'flashReserveLeft', 'partState']
+    # device keys,global
+    #dev_keys =  ['temp','state','d_uptime','serial','temp_s','card_info','rtl','pcilanes','pcigen']
+    dev_keys =  ['temp','state','d_uptime','serial','temp_s','card_info','rtl','pcilanes','pcigen',
+                  'cardStateDetails','actionRequired','temp_throttle']
+                  
+   
+    for partition in partitions:
+	 for part_k in part_keys:
+	     dict_p = part_dict[partition]
+		     
+             if chk_if_key_exists(dict_p,part_k,"vgc-monitor partition %s"%partition):
+		 continue
+             else:
+                 print "dict details = ("
+                 print output
+                 print ")"
+                 sys.exit(1)
+    
+    for k in dev_keys:
+	 if chk_if_key_exists(output,k,"vgc-monitor %s"%partition):
+             continue
+         
+         else:
+                 print "dict details = ("
+                 print output
+                 print ")"
+                 sys.exit(1)
+                 
+    trace_success_dashed("vgc-monitor output verification passed")
+    return 1
+
+# returns {'read': {'bw_r': '659708', 'r_iops': '164927', 'r_lat': '866.50', 'r_runt': '2005'}, 
+# 'write': {'bw_w': '662609', 'w_lat': '702.07', 'w_runt': '2005', 'w_iops': '165652'}}
+def parse_fio_output(output):
+
+     # Match read : io=1928.9MB, bw=657279KB/s, iops=164319 , runt=  3005msec
+     iops_regex = "io=(\d+\.?\d*)[A-Z]B,\s*bw=(\d+\.?\d*)[A-Z]B/s\s*,\s*iops=(\S+)\s*,\s*runt=\s*(\d+)msec"
+     read_iops_regex = "read\s+:\s*" + iops_regex
+     write_iops_regex = "write\s*:\s*" + iops_regex
+
+     lat_regex = "lat\s+\(usec\):\s+min=\s*%s[A-Z]*\s*,\s+max=\s*%s[A-Z]*\s*,\s+avg=\s*(%s)[A-Z]*,\s+stdev=\s*%s[A-Z]*\s*"%(FLOATINGPOINT,FLOATINGPOINT,FLOATINGPOINT,FLOATINGPOINT)
+     
+     
+
+     # READ: io=1928.9MB, aggrb=657279KB/s, minb=673053KB/s, maxb=673053KB/s, mint=3005msec, maxt=3005msec
+     regex_agg_read = "READ:\s+io=\s*(\d+\.?\d*[A-Z]B),\s+aggrb=\s*(\d+\.?\d*[A-Z]B/s),.*"
+     regex_agg_write = "WRITE:\s+io=\s*(\d+\.?\d*[A-Z]B),\s+aggrb=\s*(\d+\.?\d*[A-Z]B/s),.*"
+
+     dict = {}
+
+     dict['read']  = {}
+     dict['write'] = {}
+     
+     # initialize the values 
+     for k in ['iops','runt','bw','avglat']:
+         dict['read'][k]  = ''
+         dict['write'][k]  = ''
+
+     found_read = 0
+     #print dict;sys.exit(1)
+    
+     for l in output:
+        #print l
+        # read iops
+        if re.search(read_iops_regex,l):
+            found_read = 1
+            m = re.search(read_iops_regex,l)
+
+            # get iops and runtime only
+            r_iops = m.group(3)
+            r_runt = m.group(4) # run time
+
+            dict['read']['iops'] = r_iops
+            dict['read']['runt'] = r_runt
+	
+        #Get Latency
+        # if read is found, initialize real latency
+        # read and write hav same latency ouput, get avg latency only for now
+        elif found_read == 1 and re.search(lat_regex,l):
+            m = re.search(lat_regex,l)
+            # avg latency
+            r_lat = m.group(1)
+            dict['read']['avglat'] = r_lat
+        elif found_read == 0 and re.search(lat_regex,l):
+            m = re.search(lat_regex,l)
+            w_lat = m.group(1)
+            dict['write']['avglat'] = w_lat
+
+        # Get aggregate bandwidth for read and write
+        elif re.search(regex_agg_read,l):
+            m = re.search(regex_agg_read,l)
+            bw_r = m.group(2)
+            dict['read']['bw'] = bw_r
+        elif re.search(regex_agg_write,l):
+            m = re.search(regex_agg_write,l)
+            bw_w = m.group(2)
+            dict['write']['bw'] = bw_w
+
+        # get write iops
+        elif re.search("err=\s*(\d+)",l):
+            m = re.search("err=\s*(\d+)",l)
+            dict['err'] = m.group(1)
+   
+        elif re.search(write_iops_regex,l):
+            found_read = 0
+            m = re.search(write_iops_regex,l)
+            w_io = m.group(1)
+            w_bw = m.group(2)
+            w_iops = m.group(3)
+            w_runt = m.group(4)
+
+            dict['write']['iops'] = w_iops
+            dict['write']['runt'] = w_runt
+
+     return dict
+
+def parse_cat_etc_issue(out):
+	
+	for l in out:
+           #redhat_regex = "(Red Hat Enterprise Linux Server|CentOS)\s+release\s+(\d+)\.?\d*.*"
+	   redhat_regex = "(Enterprise Linux Server|CentOS)\s+release\s+(\d+)\.?\d*.*"
+           if re.search(redhat_regex,l):
+               m = re.search(redhat_regex,l)
+               redhat_ver = m.group(2)
+	       redhat_str = "redhat" + redhat_ver
+	       return redhat_str
+	   elif re.search("SUSE Linux Enterprise Server 11 SP1",l):
+	       return "sles11sp1"
+	   elif re.search("SUSE Linux Enterprise Server 11 SP2",l):
+	       return "sles11sp2"
+           
+           elif re.search("SUSE Linux Enterprise Server 11 \(",l):
+	       return "sles11"
+           
+           elif re.search("SUSE Linux Enterprise Server 10 SP4",l):
+	       return "sles10sp4"
+           
+           elif re.search("SUSE Linux Enterprise Server 10 SP3",l):
+	       return "sles10sp3"
+           elif re.search("SUSE Linux Enterprise Server 11 SP3",l):
+	       return "sles11sp3"
+           
+	   elif re.search("Ubuntu 10.04.4 LTS",l):
+	       return "ubuntu1004"
+            
+           # Putting .* some times it is 12.04.2 LTS or 12.04.1
+	   elif re.search("Ubuntu 12.04.*LTS",l):
+	       return "ubuntu1204"
+	   elif re.search("Ubuntu 12.10 ",l):
+	       return "ubuntu1210"
+
+        trace_error("Could not get the version from cat /etc/issue")
+	raise ParseError
+
+def getSlChSbCh(str):
+    
+    #00-00-0-0-0
+    
+    str_a = str.split("-")
+    
+    sl = str_a[1]
+    ch = str_a[3]
+    sbch = str_a[4]
+    
+    sl =  removeStartingZero(sl)
+    ch =   removeStartingZero(ch)
+    sbch =  removeStartingZero(sbch)
+    return (sl,ch,sbch)
+
+def getAllSlChSbCh(sbChs):
+    
+    # string of 00-00-0-0-0 01-01-0-0-0
+    
+        
+    ## array of 00-00-0-0-0 01-01-0-0-0
+    sbChs_a = sbChs.split()
+        
+    sbChArr = []
+        
+    for sbCh in sbChs_a:
+        sbChArr.append(getSlChSbCh(sbCh))
+          
+    return sbChArr
+    #dict[partDu] = sbChArr
+    
+def getDuPart(du):
+    """gets du zone/partition and DU, returns
+     returns 011 (part/zone + duNo)from z00du11(DB-SL-MSL-CH-SCH),
+     z01du11(DB-SL-MSL-CH-SCH)"""
+     
+    regex = "z0(0|1)du(\d+)\(DB\-SL\-MSL\-CH\-SCH\)"
+         
+    try:
+        m = re.search(regex,du)
+        # this should be called zone,but calling it partition
+        part = m.group(1)
+        du   = m.group(2)
+        
+        
+        
+    except:
+        
+        trace_error("Couldn't parse du str '%s' with regex '%s'"%(du,regex))
+        raise ParseError
+      
+    #if du.startswith('0\d'):
+            #du = du.lstrip('0')
+    if re.search("0(\d+)",du):
+        m = re.search("0(\d+)",du)
+        du = m.group(1)
+    
+    return part + du
+
+
+def parseDuMap(output):
+    
+    """returns dictionary as  output 
+    part + duNo : [slchsubChArray]
+    for example:
+    {'02': [('04', '2', '0'), ('05', '2', '0'), ('00', '3', '0'), ('01', '3', '0'),
+     ('02', '3', '0'), ('03', '3', '0'), ('04', '3', '0'), ('05', '3', '0')], 
+    '03': [('00', '0', '2'),
+    
+    where 02 in the above output is partition 0 with du 2
+    """
+    #z00du00(DB-SL-MSL-CH-SCH) : 00-00-0-0-0 01-01-0-0-0 04-04-2-0-0 05-05-2-0-0
+    # 02-02-1-1-0 03-03-1-1-0 02-02-1-0-0 03-03-1-0-0
+    duMap = {}
+    for l in output:
+        
+        l_a = l.split(":")
+        #print l_a
+        #sys.exit(1)
+        du = l_a[0]
+        # string of 00-00-0-0-0 01-01-0-0-0
+        sbChs = l_a[1]
+        
+        #z00du00(DB-SL-MSL-CH-SCH)
+        # get 0 and from z00du0 9
+        partDu = getDuPart(du)
+        
+        sbChArr = getAllSlChSbCh(sbChs)
+        
+        duMap[partDu] = sbChArr
+        
+    
+    return duMap
+
+
+
+
+def parseMountOutput(output):
+	
+	""" return mount command as parsed , example,
+	'/dev/vgca0': {'mntpoint': '/flash', 'perm': 'rw', 'filesys': 'xfs'}, """
+	
+	# none on /proc/sys/fs/binfmt_misc type binfmt_misc (rw)
+	
+	parsedOutput = {}
+	regex  = "(\S+)\s+on\s+(\S+)\s+type\s+(\S+)\s+\((\S+)\)"
+	for l in output:
+		if re.search(regex,l):
+			m = re.search(regex,l)
+			dev      = m.group(1)
+			mntpoint = m.group(2)
+			fs       = m.group(3)
+			perm     = m.group(4)
+			parsedOutput[dev] = {}
+			parsedOutput[dev]['mntpoint'] = mntpoint
+			parsedOutput[dev]['filesys'] =  fs
+			parsedOutput[dev]['perm'] = perm
+			
+			
+	return parsedOutput
+
+def parse_dd_out(o):
+
+       #err = ["No such file or directory"]
+       #trace_info("Running command '%s'"%comm)
+       #o = self.host.run_command(comm)
+       #o = o['output']
+
+       for l in o:
+           regex = "\S+\s+(.*)\|(\S+)\|"
+           if re.search(regex,l):
+               m = re.search(regex,l)
+               patt_hex = m.group(1)
+               patt = m.group(2)
+       try:
+          patt
+       except NameError:
+          trace_error("Variable patt not defined in command '%s'"%comm)
+          raise
+          sys.exit(1)
+       try:
+          patt_hex
+       except NameError:
+          trace_error("Variable patt_hex not defined in command '%s'"%comm)
+
+          raise
+          sys.exit(1)
+
+       return (patt,patt_hex)
+
+def _parse_vgc_config_partition_string(string):
+	
+	#print "HEE!"
+	#/dev/vgca0               mode=maxcapacity                sector-size=512         raid=enabled
+	#regex = "(/dev/vgc[a-z]\d+)\s+mode=(\S+)\s+sector-size=(\S+)\s+raid=(\S+)"
+        
+      
+        
+        regex = VGC_REGEX
+	m = re.search(regex,string)
+	dev_p = m.group(1)
+	mode = m.group(2)
+	sector = m.group(3)
+	raid   = m.group(4)
+	
+	return (dev_p,mode,sector,raid)
+
+def parse_vgc_config_partition(output):
+
+	for l in output:
+		print l
+		#if re.search("/dev/vgc[a-z]\d+\s+mode",l):
+                if re.search("%s\s+mode"%DEV_RE_PART,l):
+			
+			return _parse_vgc_config_partition_string(l)	
+
+def parse_vgc_config(output):
+    
+    
+    #/dev/vgca       1 partition(s)
+    #regexDevice = "(/dev/vgc[a-z])\s+(\d+)\s+partition\(s\)"
+    regexDevice = "%s\s+(\d+)\s+partition\(s\)"%DEV_RE
+    
+    dictDev = {}
+    
+    for l in output:
+	#print l
+        if re.search(regexDevice,l):
+	    m = re.search(regexDevice,l)
+	    dev = m.group(1)
+	    partitions = m.group(2)
+	    dictDev[dev] = {}
+	    
+	    dictDev[dev]['partitionNum'] = partitions
+	    #print dictDev
+	#if re.search("/dev/vgc[a-z]\d+",l):
+        if re.search(DEV_RE_PART,l):
+	      
+	       (dev_p,mode,sec,raid) = _parse_vgc_config_partition_string(l)
+               
+	       dictDev[dev][dev_p] = {'raid':raid,'mode':mode,'sector':sec}
+	    
+    return dictDev    
+       
+def parse_ue_errors(output, errType = "UE"):
+    
+    """ (15, ["WARN: Found UE error in 'RMAP L1 errors (CE, UE, WE, PErased, IO)' with value '5'", "WARN: 
+    returns ue errors as INTEGER, error string as array """
+    
+    if errType != "CE" and  errType != "UE" and errType != "Erased":
+       raise ViriError("errType '%s' is not valid"%errType)
+    
+    dict = parseSplit(output)
+    
+    UE = 0
+    
+    # vgcproc filed fro UE error is 2 , -1 for array
+    
+    
+    UE_FIELD = 1
+    
+    if errType == "CE":
+      UE_FIELD = 0
+   
+    # ignore the field for now TO DO!!
+    if errType == "Erased":
+      UE_FIELD = 2
+    
+      
+    errStrings = []
+    
+    for keys in dict.keys():
+        
+            value = dict[keys]
+            
+            v_s = value.split()
+            
+            err = int(v_s[UE_FIELD])
+            UE = UE + err
+            if int(err) > 0:
+
+                errStr = "WARN: Found %s error in '%s' with value '%i'"%(errType,keys,err)
+                errStrings.append(errStr)
+     
+    return UE,errStrings
+            
+def parse_iostat_output(output,device):
+    
+    dict  = {}
+    
+    dict['readIOPS'] = []
+    dict['writeIOPS'] = []
+    dict['readBW'] = []
+    dict['writeBW'] = []
+    dict['avgquSize'] = []
+    dict['util'] = []
+
+    #Device:         rrqm/s   wrqm/s   r/s   w/s    rMB/s    wMB/s avgrq-sz avgqu-sz   await  svctm  %util
+    #sda               0.00    41.00  0.00  6.10     0.00     0.18    61.77     0.10   16.66   1.80   1.10
+    
+    c = 0
+    for l in output:
+        
+        # using sda followed by space as regex, other wise it will also maatch sda1
+        # this will only match sda , not sda1
+        
+        if re.search("%s\s+.*"%device,l):
+            c = c + 1
+            # ignore first two enteries
+            if c <= 1:
+                continue
+            l_a = l.split()
+            
+            dict['readIOPS'].append(l_a[3])
+            dict['writeIOPS'].append(l_a[4])
+            dict['readBW'].append(l_a[5])
+            dict['writeBW'].append(l_a[6])
+            dict['avgquSize'].append(l_a[8])
+            dict['util'].append(l_a[11])
+
+     
+    return dict
+
+def parse_lspci(output):
+   
+   print output
+   out = []
+   for l in output:
+      print l # you can delete this
+      # if string is DevSta , get corr and uncorrectable errors
+      if re.search(".*DevSta",l):
+         #print l;sys.exit(1)
+         l_a = l.split(":")
+         
+         l_a1 = l_a[1].split()
+                  
+         for g in l_a1:
+            if re.search("CorrErr",g):
+               #print g
+               out.append(g)
+            if re.search("UncorrErr",g):
+               out.append(g)
+      # according to H/W team ignore this   
+      elif re.search("Control",l):
+         
+         l_a = l.split(":")
+         
+         l_a1 = l_a[1].split()
+         #print l_a1
+         
+         for g in l_a1:
+            if re.search("ParErr",g):
+               out.append(g)
+      
+      elif re.search("CESta",l):
+         
+         l_a = l.split(":")
+         
+         l_a1 = l_a[1].split()
+         #print l_a1
+         
+         for g in l_a1:
+            #if re.search("ParErr",g):
+            out.append(g)      
+   
+   return out     
+   
+
+def parse_lspci_vv_chk_error(output, hostname, raiseOnErrors = "1" ):
+   
+   """ parses returns 2 if error occured, else 1, also can raise"""
+   
+   found_devSta = 0
+   
+   #sys.exit(1)
+   if re.search("DevSta",output):
+          found_devSta = 1
+       
+          # remove DevStat after splitting it
+          l_a = output.split(":")
+          l_a1 = l_a[1].split()
+          for m in  l_a1:
+            
+             # if ends with +, 
+             if  re.search("Err",m):
+              if re.search(".*\+$",m):
+              
+               print "-" * 8
+               
+               errorStr = "Found + in lspci output for '%s' , line details '%s'"%(m,output)
+               trace_error(errorStr)
+
+               # Ignore CorrErr+ on Cisco Machines
+               trace_info("Host is '%s'"%hostname)
+               if 'c1' in hostname or 'c2' in hostname or 'c3' in hostname or 'c4' in hostname or 'c5' in hostname or 'tiger03' in hostname and 'CorrErr+' in m:
+                  trace_info("Ignoring 'CorrErr+ for c1-c5 Machines")
+                  return 1 
+
+               if  raiseOnErrors == "1":
+                  raise ViriError(errorStr)
+
+               return 2
+     
+   if found_devSta == 0:
+       raise ViriError("Did not find 'devSta' in the output %s"%output)
+
+   trace_info("No lspci correctable or uncorrectable issues seem to be present , output '%s'"%output)
+   return 1
+
+
+def parse_vgc_vcache_monitor(output):
+   
+   #wb              Write-back      /dev/vgcb0 (1)          /dev/vgca0 (2222 GB)    GOOD
+   #regex = "(\S+)\s+(Write-back|Write-through|Write-around)\s+(%s)\s+(\S+)\s+\((\d+) GB\)\s+(DETACHED|GOOD)"%(VGC_DRIVE_PART_REGEX)
+   regex = "(\S+)\s+(Write-back|Write-through|Write-around)\s+(%s)\s+(\S+)\s+(DETACHED|GOOD)"%(VGC_DRIVE_PART_REGEX)
+   
+   dict = {}
+   found_cache_string = 0
+   
+   
+   for l in output:
+
+      #print l
+      if re.search(regex,l):
+         #print l
+         
+         found_cache_string = 1
+         
+         m =  re.search(regex,l)
+         cacheName = m.group(1)
+         cacheMode = m.group(2)
+         frontEnd   = m.group(3)
+         # to be deleted, earlier it was wb , not it is /dev/vgca0_wb, so not needed to make one
+         fontEnd_cacheName =  frontEnd + "_"  + cacheName
+         backEnd    = m.group(4)
+         #size       = m.group(5)
+         status       = m.group(6)
+         
+         dict[cacheName] = {}
+         dict[cacheName]['mode'] = cacheMode
+         #dict[fontEnd_cacheName]['size'] = size
+         dict[cacheName]['frontEnd'] = frontEnd
+         dict[cacheName]['backEnd'] = backEnd
+         dict[cacheName]['status'] = status
+         dict[cacheName]['cacheName'] = cacheName
+   
+   if not found_cache_string:
+       raise ViriError ("Did not find regex '%s' in output '%s'"%(regex,output))
+   
+   dict2 = parseSplit(output,add_underscore = 1)
+   
+   # merge the second dict with first
+   for key in dict2.keys():
+      dict[cacheName][key] = dict2[key]
+   
+   
+   # {'/dev/vgca0_wa': {'status': '438', 'cache_details': '', 'cache_device': '/dev/vgca0_wa', 'frontEnd': '/dev/vgca0',
+   #'sequence_detection': 'Off', 'writes': '7019101', 'reads': '224327', 'vgc-vcache-monitor': 'FlashMAX Connect Software Suite 1.0(53741.V3)', 'io_statistics': '', 'cacheName': 'wa', 'bytes_written': '28703612928 (26 GiB)', 'mode': 'Write-around', 'read_miss': '224242 (99.962 percent)', 'total_cached_data': '339968 (0 GiB)', 'cache_full': '0 (0.000 percent)', 'cache_statistics': '', 'size': '300 GB', 'bytes_read': '918843392 (0 GiB)', 'backEnd': '/dev/vgca'}}
+
+   return dict    
+
+def parse_regex(regex,output):
+   
+   p = re.compile(regex)
+   
+   for l in output:
+      if p.search(l):
+         #print p.findall(l)
+         return p.findall(l)[0]
+   
+   else:
+      
+      raise ViriError ("Did not find regex '%s' in output '%s'"%(regex,output))
+      #print "ERR:Did not find regex '%s' in output '%s' "%(regex,output)
+      #sys.exit(1)
+def parse_vgc_vshare_monitor_show_path(output):
+    """
+    {'multipath_enabled': 'NO', 'local_block_device': '/dev/vgca0',
+    'vshare_configuration': '', 'uuid': 'db790174-66bb-49a7-93c9-af3f8255b751',
+    'vshare_name': 'RAC', 'arrayInitiators': [['vsan32', '0x0', '0x0', '0x0',
+    '-', '0x0']], 'role': 'target', 'number_of_peers': '1',
+    'vgc-vshare-monitor': 'FlashMAX Connect Software Suite 1.1(59683.V4)'}
+    Some Usage:
+    print parse_vgc_vshare_monitor_show_access(l_a)['arrayInitiators']
+
+    """
+    dict2 = parseSplit(output,add_underscore = 1)
+    
+    arrayInitiators = []
+    for l in output:
+
+        # if ip address is matched
+	if re.search(r'0x',l):
+           l_a = l.split()
+	   arrayInitiators.append(l_a)
+
+    dict2['arrayInitiators'] = arrayInitiators
+    return dict2  
+ 
+
+def parse_vgc_vshare_monitor_show_access(output):
+    """
+    {'local_block_device': '/dev/vgca0', 'vshare_configuration': '', 'uuid':
+    '89ad28cc-1ed2-4034-bcfc-a7ee197b8948', 'vshare_name': 'vs2',
+    'arrayInitiators': [['vsan41', '172.16.34.146', 'Connected'], ['vsan42',
+    '172.16.34.148', 'Disconnected']], 'role': 'target', 'number_of_peers':
+    '1', 'vgc-vshare-monitor': 'FlashMAX Connect Software Suite 1.0(56123.V3)'}
+
+    Some Usage:
+    print parse_vgc_vshare_monitor_show_access(l_a)['arrayInitiators']
+    """
+    dict2 = parseSplit(output,add_underscore = 1)
+    
+    arrayInitiators = []
+    for l in output:
+
+        # if ip address is matched
+	if re.search("\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",l):
+           l_a = l.split()
+	   arrayInitiators.append(l_a)
+
+    dict2['arrayInitiators'] = arrayInitiators
+    return dict2  
+
+def parse_domain_list(output):
+   dict1 = {}
+   for l in output:
+       if re.search("line",l):
+		   print l
+		   l_a = l.split() 
+		   machine = l_a[0]
+		   dict1[machine] = 1
+   return dict1
+   
+def parse_space_list(output):
+   #print output;sys.exit(1)
+   dict1 = {}
+   for l in output:
+       # if matches some space GB,
+       # sometimes there are other outputs also without space
+       # which we dont want
+       if re.search("\s+\d+GB",l):
+		   print l
+		   l_a = l.split() 
+		   space = l_a[0]
+		   state = l_a[1]
+		   dict1[space] = state
+   #returns    {'space2': 'DEGRADED', 'space3': 'GOOD'}
+   return dict1
+ 
+
+def parse_vgc_vshare_monitor(output):
+   
+   """takes output as input, returns dict as  example {'/dev/vgca0vs': {'initiator_ip_address': '172.16.34.146', 'target_uuid': '288a7f29-404c-471c-914e-f62c86e504a4',
+   'vshare': 'vs', 'vgc-vshare-monitor': 'FlashMAX Connect Software Suite 1.0(53741.V3)', 'io_statistics': '',
+   'total_read_errors': '0', 'total_bytes_read': '40960 (0 GB)', 'state': 'Connected', 'role': 'target', 'total_write_errors': '0',
+   'initiator_hostname': 'vsan41', 'vshare_configuration': '', 'total_bytes_written': '0 (0 GB)', 'target_capacity': '100 GB'}}
+   """
+   
+   #STATES_REGEX = 
+   #wb              Write-back      /dev/vgcb0 (1)          /dev/vgca0 (2222 GB)    GOOD
+   regex = "(/dev/\w+)\s+(/dev/vgc[a-z]\d+|NA)\s+(target|initiator)\s+((C|Disc)onnected|Transition|Stopped|Started)"
+   
+   #   /dev/vs1            /dev/vgca0          target         Connected
+
+   #regex = ""
+   
+   # g is unused it is matached c or disc in connected/disconnected
+   (vshare,device,role,state,g) = parse_regex(regex,output)
+
+   # /dev/vgca0_vs
+   #key = device + vshare
+   
+   key = vshare
+   
+   dict = {}
+   dict[key] = {}
+   
+   dict[key]['role'] = role
+   dict[key]['device'] = device
+   dict[key]['state'] = state
+     
+   # split based on ":"
+   dict2 = parseSplit(output,add_underscore = 1)
+   
+   # merge the second dict with first
+   # using /dev/vgca0_vs as key merge second dictionary with split ":"
+   for key1 in dict2.keys():
+      dict[key][key1] = dict2[key1]
+
+   # {'/dev/vgca0_wa': {'status': '438', 'cache_details': '', 'cache_device': '/dev/vgca0_wa', 'frontEnd': '/dev/vgca0',
+   #'sequence_detection': 'Off', 'writes': '7019101', 'reads': '224327', 'vgc-vcache-monitor': 'FlashMAX Connect Software Suite 1.0(53741.V3)', 'io_statistics': '', 'cacheName': 'wa', 'bytes_written': '28703612928 (26 GiB)', 'mode': 'Write-around', 'read_miss': '224242 (99.962 percent)', 'total_cached_data': '339968 (0 GiB)', 'cache_full': '0 (0.000 percent)', 'cache_statistics': '', 'size': '300 GB', 'bytes_read': '918843392 (0 GiB)', 'backEnd': '/dev/vgca'}}
+   
+   return dict                 
+            
+                
+                    
+                
+
+             
+             
+            
+

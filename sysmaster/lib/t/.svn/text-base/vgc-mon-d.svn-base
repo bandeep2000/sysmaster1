@@ -1,0 +1,37 @@
+vgc-monitor: 2.1.2(B5R1.37088)
+
+ERROR: Last config apply had failed/Config apply in progress !!!
+
+Card_Name      Raw_Capacity   Max_DaughterBoards  Num_Partitions      Status
+/dev/vgca      384 GiB        12                  1                   GOOD
+
+  Serial Number   : VS011D4-000070      
+  Card Info       : samsungk-k9f8g, 384 GiB, Double decker
+                    Rev : FlashMAX 33248, module 33191
+  Temperature     : NEEDS ATTENTION, 41 C
+
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID      Status
+  /dev/vgca0          384 GiB             300 GB              disabled  GOOD
+
+    Mode                       : maxperformance      
+    Total Flash Bytes          : 1739287552 (1.74GB) (reads), 
+                                 2592413040640 (2.59TB) (writes)
+    Remaining Life             : 99.92%              
+    Garbage Collection Impact  : Low                 
+    Partition State            : ready               
+
+    Daughter  Max       Life_Left      RAID               Status        
+    Board ID  Capacity  (cycles)       Groups                           
+    4         32 GiB    99.93%      0 1 2 4               GOOD
+    5         32 GiB    99.92%      0 1 3 5               GOOD
+    6         32 GiB    99.93%      0 1 2 4               GOOD
+    7         32 GiB    99.92%      0 1 3 5               GOOD
+    8         32 GiB    99.93%      0 2 4 5               GOOD
+    9         32 GiB    99.93%      1 2 3 4               GOOD
+    10        32 GiB    99.93%      0 2 4 5               GOOD
+    11        32 GiB    99.93%      1 2 3 4               GOOD
+    12        32 GiB    99.92%      0 2 3 5               GOOD
+    13        32 GiB    99.92%      1 3 4 5               GOOD
+    14        32 GiB    99.92%      0 2 3 5               GOOD
+    15        32 GiB    99.92%      1 3 4 5               GOOD

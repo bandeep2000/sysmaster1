@@ -1,0 +1,12 @@
+  "/dev/vgca0" is a new physical volume of "2.02 TiB"
+  --- NEW Physical volume ---
+  PV Name               /dev/vgca0
+  VG Name               V1
+  PV Size               2.02 TiB
+  Allocatable           NO
+  PE Size               0
+  Total PE              0
+  Free PE               0
+  Allocated PE          0
+  PV UUID               l1HmZA-2FwG-mTH7-GUJw-IP61-dpMS-ATwAlt
+

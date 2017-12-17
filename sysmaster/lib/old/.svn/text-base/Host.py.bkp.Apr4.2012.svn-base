@@ -1,0 +1,609 @@
+#!/usr/bin/python
+import os,sys,re,time
+import pexpect
+from Parsers import *
+from Trace import *
+from Util import *
+from VirExceptions import *
+
+U_NAME = "root"
+PASSWD = "0011231"
+sshn = "ssh -oStrictHostKeyChecking=no -oCheckHostIP=no -oUserKnownHostsFile=/dev/null"
+
+# Example usage
+##!/usr/bin/python
+#from Host import Host
+
+#h = Host("nand03")
+#h.get_ipmi_ip_addr()
+#h.if_file_exists('/dev/vgca2')
+
+# This needs to be uncommented if exceptions dont work
+class TIMEOUT(Exception):
+   pass
+class CommandError(Exception):
+   pass
+#class DeviceBusy(Exception):
+#   pass
+
+
+class Host:
+   def __init__(self,name,logfile_object = sys.stdout,u_name = U_NAME,passwd = PASSWD):
+
+        self.name           = name
+        self.logfile        = logfile_object
+        self.user           = u_name
+        self.passwd         = passwd
+        # Expected prompt
+        #[root@sqa05 ~]#
+        self.expected_prompt = "\[\S+@\S+\s+~\]#\s"
+        self.connection = None
+
+   def logon(self):
+        try:
+            self.connection = pexpect.spawn(sshn + " " + self.user + "@" + self.name,
+                                            logfile = self.logfile)
+            # if no passwd,linux prompt will be passed 
+            rc = self.connection.expect([".*password",self.expected_prompt],100)
+        except pexpect.EOF:
+            trace_error("Unable to connect to '%s'"%self.name)
+            sys.exit(1)
+        
+        # if no passwd prompt found,return
+        if rc == 1:
+            return 1
+
+        self.connection.sendline(PASSWD)
+        self.connection.expect(self.expected_prompt,600)
+        return 1
+   
+   def run_command(self,command,timeout = 600,verbose = 0, exp_out_prompt = {}):
+        """ Runs the command on host, return output as array and return code as 
+            integer"""
+        if self.connection == None:
+            self.logon()
+
+        # if bg process
+        if re.search(".*&$",command):
+            self.connection.sendline(command)
+            self.connection.expect(self.expected_prompt,timeout)
+            return 1
+            
+        # add the return code with command
+
+        command = command + ';echo $?'
+
+        self.connection.sendline(command)
+        expected_prompt = [self.expected_prompt]
+        try:
+            returnrc = self.connection.expect(expected_prompt,timeout)
+        except pexpect.TIMEOUT:
+            print "-" * 40
+            raise TIMEOUT ("ERROR: command '%s' timedout"%command)
+        output = self.connection.before.strip()
+        output_a = output.split("\r\n")
+       
+        # remove the expected prompt  from the end
+        output_a.pop()
+        
+        #output_a = output_a[1:] # remove command
+   
+        # get the return code
+        rc = output_a.pop()
+
+        try:
+            rc = int(rc)
+        except ValueError:
+            trace_error("Could not convert return code of command '%s' to integer"%command)
+            trace_error("Expecting integer found '%s'"%rc)
+            sys.exit(1)
+
+
+        if verbose == 1: print "INFO: Found return code of command '%s' as '%i'" %(command,int(rc))
+        #print "rc = '%s'"%rc
+        #print output
+        #for l in output:
+            #print "l = '%s'"%l
+        # return output_str as raw output
+        # return output as normalized which is more useful 
+        out = {'output_str': output,
+               'output'    : output_a,
+               'rc'        : rc}
+  
+        return out
+
+   def run_command_chk_rc(self,command,timeout = 600):
+       o = self.run_command(command,timeout = timeout)
+       rc = o['rc']
+
+       if rc != 0:
+           err = "Couldn't run the command '%s', found return code as '%i'"%(command,rc)
+           trace_error(err)
+           raise CommandError(err)
+
+       return o
+
+   def run_command_verify_out(self,command,verify_regex = None,errors = [],timeout = 600):
+
+        o = self.run_command_chk_rc(command,timeout = timeout)
+        out = o['output']
+
+        if not is_var_list(errors):
+            trace_error("Please pass errors as list")
+            sys.exit(1)
+
+        if verify_regex:
+            found_out = 0
+            for l in out:
+
+                if re.search(verify_regex,l):
+                    print "INFO: Found '%s' output in command '%s'"%(verify_regex,command)
+                    found_out = 1
+            if found_out == 0:
+                    print "ERR: Couldn't find '%s' output in command '%s'"%(verify_regex,command)
+                    sys.exit(1)
+        # this and above could be combined and written as a function
+        
+        for e in errors:
+            for l in out:
+                if re.search(e,l):
+                    trace_error("Found error '%s' in command '%s'"%(e,command))
+                    raise CommandError
+
+        return o
+
+   def run_vgc_monitor(self,device):
+        command = "vgc-monitor -d %s"%device 
+        out =  self.run_command_chk_rc(command)
+        o  = out['output']
+        
+        return parse_vgc_monitor(o)
+   
+   def get_card_part_main_attr(self,device):
+       """ takes /dev/vgca0, returns {'sector': '512', 'card_info': 'VIR-M2-LP-2200-2A, 3072 GiB, Double decker', 'ucap': '2222', 'raid': 'enabled', 'mode': 'maxcapacity'}
+       """
+       check_if_vgc_part(device)
+
+       #remove partition 0
+       device_m = get_vgc_dev_from_part(device)
+       det =  self.run_vgc_monitor(device_m)
+       # all the parser from vgc-monitor has part for the attributes
+       raid = det['part'][device]['raid']
+       ucap = det['part'][device]['ucap']
+       mode = det['part'][device]['mode']
+       card_info = det['card_info']
+       build = det['build']
+
+       dict = {}
+       dict['raid'] = raid
+       dict['ucap'] = ucap
+       dict['mode'] = mode
+       dict['card_info'] = card_info
+       dict['build'] = build 
+
+       #get sector from vgc-config
+       sector = self.vgc_config()[device]['sector']
+       dict['sector'] = sector
+
+       return dict
+
+   def get_card_state(self,device,state_exp = "GOOD"):
+        c = run_vgc_monitor(device)
+        state = c[device]['state']
+
+        if state != state_exp:
+            return False
+            
+
+        part = c[device]['part']
+
+   def get_bdev(self,device):
+       cmd = "blockdev --getsize64 %s"%device
+       out =  self.run_command_chk_rc(cmd)
+       o  = out['output']
+       bsize =  o[1]
+
+       try:
+           bsize = int(bsize)
+       except ValueError:
+           trace_error("Couldn't find the bdev for device %s as integer, found '%s' instead"%(device,bsize))
+           sys.exit(1)
+
+       return bsize
+        
+
+    
+   def get_ipmi_ip_addr(self):
+        command = "ipmitool lan print  | grep \"IP Address\" | grep -v Source | awk -F \":\" '{print $2}'"
+        out = self.run_command_chk_rc(command)
+        output = out['output']
+        print output
+
+   def if_file_exists(self,file_path):
+
+       # --color option was given since is changing pexpect
+       command = "ls --color=none " + file_path
+
+       out = self.run_command(command)
+       rc = out['rc']
+
+       if rc == 0:
+           return True
+
+       return False
+
+   def is_service_running(self,service):
+        command = "service %s status"
+        out = self.run_command_check_rc(command)
+        output = out['output']
+
+        regex_not_running = "is not running|not loaded"
+        regex_is_running = "is running|modules?\s+(are\s+)loaded"
+
+        # variable to check if at least found one string that shows module ouput has module running
+        # if not found then, the output is wrong
+        found_mod_running = 0
+
+        for line in output:
+            if re.search(regex_not_running,line):
+                return False
+            elif re.search(regex_is_running,line):
+                found_mod_running = 1
+            else:
+                continue
+
+        if found_mod_running == 0:
+            print "Could'nt determine if '%s' is running,couldn't find expected output '%s'"%(service,regex_is_running)
+            sys.exit(1)
+
+        return True
+     
+     #def if_file_exists(self,file_path):
+   def create_fs(self,device,fs,options = None):
+       """ Example Usage: 
+       h = Host("sqa05")
+       h.create_fs("/dev/vgca0","ext3"," -J size=400") 
+       h.create_fs("/dev/vgca0","xfs") """
+
+       command = "mkfs." + fs + " " +  device
+       if options:
+           command = command + " " +  options
+
+       # xfs requires -f option
+       if fs == "xfs":
+           command = command + " -f" 
+       self.run_command_chk_rc(command)
+       return 1
+
+   def mount_fs(self,device,mnt_point):
+       command = "mount %s %s"%(device,mnt_point)
+       self.run_command_chk_rc(command)
+       return 1
+
+   def umount_fs(self,device):
+       command = "umount %s "%device
+       self.run_command_chk_rc(command)
+       return 1
+
+   def umount(self,device):
+       try:
+          self.umount_fs(device)
+       except CommandError:
+          trace_info("Seems like device %s is already unmounted"%device)
+          pass
+
+   def mount(self,device,mnt_point):
+       try:
+          self.mount_fs(device,mnt_point)
+       except CommandError:
+          trace_info("Seems like device %s is already mounted"%device)
+          pass
+
+   def get_md5sum(self,file):
+       comm = "md5sum %s | awk '{print $1}'"%file
+       o = self.run_command_chk_rc(comm)
+       md5sum = o['output']
+       return md5sum[1]
+       
+   def create_file(self,file):
+       comm = "dd if=/dev/urandom of=%s bs=4K count=4000"%file
+       self.run_command_chk_rc(comm)
+       return 1
+   def get_kernel_ver(self):
+       return self.run_command_chk_rc("uname -r")['output'][1]
+
+   def cat_etc_issue(self):
+       if not self.if_file_exists("/etc/issue"):       
+           trace_error("It is not Red hat host")
+           sys.exit(1)
+       o = self.run_command_chk_rc("cat /etc/issue")
+       out = o['output']
+       for l in out:
+           if re.search("release\s+(\d+\.?\d+)",l):
+               m = re.search("release\s+(\d+\.?\d+)",l)
+               return m.group(1)
+
+       trace_error("Could not get the redhat version")
+       sys.exit(1)
+
+
+   def mkdir(self,dir):
+       comm = "mkdir %s"%dir
+       self.run_command_chk_rc(comm)
+       return 1
+
+   def rmdir(self,dir):
+       comm = "rm -rf %s"%dir
+       try:
+          self.run_command_chk_rc(comm)
+       except CommandError:
+          print "INFO: Seems like directory to remove doesn't exist"
+          sys.exit(1)
+       return 1
+
+   def vgc_sec_er(self,device,option):
+       if option != "purge" and option != "clear" and option != "verbose" and option != "default":
+           print "ERR: Please pass option as purge or clear"
+           sys.exit(1)
+       comm = "vgc-secure-erase --%s %s"%(option,device)
+       trace_info("Running vgc secure erase command '%s'"%comm)
+       if option == "default":
+          comm = "vgc-secure-erase %s"%device
+       self.connection.sendline(comm)
+       rc = self.connection.expect(["Do you want to continue","Device or resource busy"])
+       if rc == 1:
+           err = "Found 'Device or resource busy' in command '%s'"%comm
+           trace_error(err)
+           raise DeviceBusy(err)
+       self.connection.sendline("yes")
+       self.connection.expect(self.expected_prompt,14000)
+       output = self.connection.before.strip()
+       output_a = output.split("\r\n")
+       return output_a
+
+   def kill_proc(self,proc):
+       self.run_command_chk_rc("kill -9 `pidof %s`"%proc,timeout = 1000)
+       return 1
+   def ser_reload(self,ser = "vgcd"):
+       self.run_command_chk_rc("service %s reload"%ser,timeout = 1000)
+   def reset_card(self,device):
+       cmd = "vgc-config -d  %s -r && service vgcd reload"%device
+       self.run_command_chk_rc(cmd,timeout = 1000)
+       #self.ser_reload()
+   def zion_reset_card(self,dev):
+       chk_if_vdent_dev(dev)
+       if if_vgc_dev_part(dev):
+           trace_error("Device '%s' passed as partition, please without partition,e.g,/dev/vgca"%dev)
+           raise VirDeviceError
+       cmd = "vgc-config -d  %s -r"%dev
+       self.run_command_chk_rc(cmd,timeout = 1000)
+       return 1
+
+   def reboot(self, power_cycle = False):
+        if  power_cycle:
+            rc = os.system("/home/bandeepd/python/cycle.py %s w"%self.name)
+            if rc != 0:
+                trace_error("Failed to powercycle %s"%self.name)
+                sys.exit(1)
+            self.connection.close()
+            self.connection = None
+            return 1
+
+        self.run_command_chk_rc("reboot")
+        sleep_time(20, "after reboot") 
+
+
+        # close the connection
+        self.connection.close()
+        self.connection = None
+
+        is_hostup(self.name)
+
+        return 1
+
+   def get_fs(self,device):
+       check_if_vgc_part(device)
+       cmd = "file -s %s"%device
+       o = self.run_command_verify_out(cmd,errors = ["No such file"])
+       out = o['output']
+
+       regex = ".*\s(\S+)\s+filesystem data"
+
+       fs = ""
+       for l in out:
+           if re.search(regex,l):
+               m = re.search(regex,l)
+               fs = m.group(1)
+       if not fs:
+           trace_error("Couldn't get the file system on device '%s'"%device)
+           trace_error("regex '%s' not found in the output of command "%regex)
+           print_red("Output = '%s'"%out)
+           sys.exit(1)
+       # return in lower case letters
+       return fs.lower()
+
+   def create_and_verify_fs(self,device,fs,options = None):
+       self.create_fs(device,fs,options)
+       fs_found = self.get_fs(device)
+       if fs == fs_found:
+           trace_success("Created filesys '%s' found filesystem '%s' on device %s"%(fs,fs_found,device))
+           return 1
+
+       trace_error("Created fs %s found filesystem %s on device %s"%(fs,found_fs,device))
+       sys.exit(1)
+
+   def cp(self,src_file,dst_file):
+       cmd = "cp %s %s"%(src_file,dst_file)
+       self.run_command_chk_rc(cmd)
+       return 1
+   def cp_dict(self,dst_file):
+       self.cp("/usr/share/dict/linux.words",dst_file)
+       return 1
+   def get_part_usable_cap(self,device):
+       cmd = "vgc-monitor -d %s | grep \"%s\""%(device,device)
+       o =  self.run_command_chk_rc(cmd)
+
+       out =  o['output']
+
+       part_usable_cap = {}
+
+       for l in out:
+       # if   /dev/vgcc0          2048 GiB            500 GB              enabled   GOOD
+           if re.search("/dev/vgc[a-z]\d+.*",l):
+               l_a = l.split()
+               us_cap = l_a[3]
+# more attrib can be added later
+               part = l_a[0]
+               part_usable_cap[part] = {} 
+               part_usable_cap[part]['us_cap'] = us_cap 
+       # return {'/dev/vgcc0': {'us_cap': '500'}}
+       return part_usable_cap
+   def get_part_mode(self,device):
+       """get partition mode,takes input as /dev/vgca0"""
+       cmd = "vgc-config --p %s  | grep -A1 \"Current Configuration\" | grep %s"%(device,device) 
+       o =  self.run_command_chk_rc(cmd)
+       out = o['output']
+       l_a = out[1].split()
+       
+       l_m = l_a[1]
+       l_m_a = l_m.split("=")
+
+       mod =  l_m_a[1]
+
+       return mod
+   def vgc_config(self):
+       """get partition mode,takes input as /dev/vgca0"""
+       o =  self.run_command_chk_rc("vgc-config")
+       out = o['output']
+       dict = {}
+
+       for l in out:
+           if re.search("/dev/vgc[a-z]\d+",l):
+               a  = l.split()
+               dev_p = a[0]
+               dict[dev_p] = {}
+
+               mode_str = a[1]
+               mode_a   = mode_str.split("=")
+               mode    = mode_a[1]
+
+               sec_str = a[2]
+               sec_a   = sec_str.split("=")
+               sec     = sec_a[1]
+               
+               raid_str = a[3]
+               raid_a   = raid_str.split("=")
+               raid     = raid_a[1]
+               dict[dev_p]['raid'] = raid
+               dict[dev_p]['sector'] = sec 
+               dict[dev_p]['mode'] =  mode 
+
+       return dict 
+
+
+   #def get_card_useful_attr(self,attr):
+
+   def get_card_attr(self,device,attr):
+       return self.run_vgc_monitor(device)[attr]
+
+   def get_card_serial(self,device):
+       """get card serial,takes input as /dev/vgca"""
+       return self.get_card_attr(device,"serial")
+   def get_card_part_attr(self,device,attr):
+       check_if_vgc_part(device)
+       # get /dev/vgca out of /dev/vgca0
+       dev = get_device_part(device)
+       """get card serial,takes input as /dev/vgca"""
+       return self.run_vgc_monitor(dev)['part'][device][attr]
+
+   def get_card_info(self,device):
+       """get card info,takes input as /dev/vgca"""
+       cmd = "vgc-monitor -d %s | grep \"Card Info\""%device
+       o =  self.run_command_chk_rc(cmd)
+       out = o['output'][1]
+       out_a = out.split(":")
+
+       return out_a[1].strip()
+
+   def get_offset_0_pbn(self,drive):
+       """takes a0 and map as inputs"""
+       option = "map"
+       cmd = "vgcproc /proc/driver/virident/vgcdrive%s/%s | head -1"%(drive,option)
+       o =  self.run_command_chk_rc(cmd)
+       x = o['output'][1]
+       x_a = x.split()
+       return x_a[1]
+
+   def configure_zion_card(self,device,raid,sector,mode,n = None):
+       """ Usage example:
+       
+       """
+
+       if if_vgc_dev(device) and not n:
+           trace_error("Number of partition not passed device %s"%device) 
+           sys.exit(1)
+       if if_vgc_dev_part(device) and n:
+           trace_error("Partition passed as %s but device passed  as partition '%s'"%(n,device))
+           sys.exit(1)
+
+       cmd = "vgc-config -s %s -5 %s -m %s"%(sector,raid,mode)
+
+       if if_vgc_dev(device):
+           cmd = cmd + " -d %s -n %s"%(device,n)
+       elif if_vgc_dev_part(device):
+           check_if_vgc_part(device)
+           cmd = cmd + " -p %s "%device
+       else:
+           trace_error("Please pass valid vgc device not as '%s'"%device) 
+           sys.exit(1) 
+       time_s = int(time.time())
+       trace_info("Running command '%s'"%cmd)
+       o = self.run_command_chk_rc(cmd)
+       out = o['output']
+       print "Found output ("
+       for l in out:
+           print l
+       print ")"
+       time_f = int(time.time())
+       
+       time_diff = time_f - time_s
+
+       trace_info("Time took '%i' secs"%time_diff)
+
+       return 1
+
+   def get_host_device_ver(self,device):
+       """takes /dev/vgcc0 or /dev/vgcc as input,print kernel, cat /etc/isue"""
+
+       chk_if_vdent_dev(device)
+
+       # if device is
+       if if_vgc_dev_part(device):
+           device = get_vgc_dev_from_part(device)
+       build = self.run_vgc_monitor(device)['build']
+       
+       #build = self.get_card_part_main_attr(device)['build']
+       kernel = self.get_kernel_ver()
+       ver = self.cat_etc_issue()
+
+       det = {}
+
+       det['kernel'] = kernel 
+       det['version'] = ver  # version of redhat
+       det['build']   = build
+
+       return det
+
+
+
+
+  
+
+
+      
+
+
+       
+
+
+       

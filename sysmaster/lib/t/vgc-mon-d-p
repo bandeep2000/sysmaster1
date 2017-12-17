@@ -1,0 +1,53 @@
+vgc-monitor: 2.1.3(B5R1.40348)
+
+Card_Name      Raw_Capacity   Max_DaughterBoards  Num_Partitions      Status
+/dev/vgcc      2048 GiB       16                  2                   GOOD
+
+  Serial Number   : VS001E2-000251
+  Card Info       : intel-mlc-2tb, 2048 GiB, Double decker
+                    Rev : FlashMAX 33248, module 32977
+  Temperature     : Safe, 42 C
+
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID      Status
+  /dev/vgcc0          1024 GiB            702 GB              enabled   GOOD
+
+    Mode                       : maxcapacity
+    Total Flash Bytes          : 108575083470848 (108.58TB) (reads),
+                                 168494121566208 (168.49TB) (writes)
+    Remaining Life             : 83.94%
+    Garbage Collection Impact  : Low
+    Partition State            : ready
+
+    Daughter  Max       Life_Left      RAID               Status
+    Board ID  Capacity  (cycles)       Groups
+    0         128 GiB   83.94%      0 1 2 3               GOOD
+    2         128 GiB   97.60%      0 1 2 3               GOOD
+    4         128 GiB   97.60%      0 1 2 3               GOOD
+    6         128 GiB   97.60%      0 1 2 3               GOOD
+    8         128 GiB   97.60%      0 1 2 3               GOOD
+    10        128 GiB   97.60%      0 1 2 3               GOOD
+    12        128 GiB   97.60%      0 1 2 3               GOOD
+    14        128 GiB   97.60%      0 1 2 3               GOOD
+
+  Partition           Raw_Capacity        Usable_Capacity     RAID      Status
+  /dev/vgcc1          1024 GiB            702 GB              enabled   GOOD
+
+    Mode                       : maxperformance
+    Total Flash Bytes          : 109201304655872 (109.20TB) (reads),
+                                 169672550481920 (169.67TB) (writes)
+    Remaining Life             : 98.40%
+    Garbage Collection Impact  : Low
+    Partition State            : ready
+
+    Daughter  Max       Life_Left      RAID               Status
+    Board ID  Capacity  (cycles)       Groups
+    1         128 GiB   98.40%      0 1 2 3               GOOD
+    3         128 GiB   98.40%      0 1 2 3               GOOD
+    5         128 GiB   98.40%      0 1 2 3               GOOD
+    7         128 GiB   98.40%      0 1 2 3               GOOD
+    9         128 GiB   98.40%      0 1 2 3               GOOD
+    11        128 GiB   98.40%      0 1 2 3               BAD
+    13        128 GiB   98.40%      0 1 2 3               GOOD
+    15        128 GiB   98.40%      0 1 2 3               GOOD
+

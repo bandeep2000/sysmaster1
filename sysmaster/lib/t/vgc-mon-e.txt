@@ -1,0 +1,28 @@
+vgc-monitor: 4.1.63171.trunk
+
+Driver Uptime: 19:24
+Card Name      Num Partitions      Card Type         Status
+vgca           1                   VIR-M2-LP-4400-2B Critical
+
+  Serial Number      : SJT06577
+  Card Info          : Part: 35000-00028-A1
+                       Rev : FlashMAX II 61033, x8 Gen2
+                       Option ROM : not present
+  Temperature        : 57 C (Safe)
+  Grown Bad Blocks   : 124 (0.02%)
+  Temp Throttle      : Inactive
+  Card State Details : Partition is not in ready state
+  Action Required    : Run vgc-diags and send the diags archive to technical support
+
+  Partition      Usable Capacity     RAID
+  Error: vgca0 State NOT-READY
+  vgca0          unknown             unknown
+
+    Mode                          : unknown
+    Total Flash Bytes             : 467928367065088 (467.93TB) (reads)
+                                    70329118294016 (70.33TB) (writes)
+    Remaining Life                : 0.00%
+    Partition State               : NOT-READY
+    Flash Reserves Left           : 0.00%
+
+

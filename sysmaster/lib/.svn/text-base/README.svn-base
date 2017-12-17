@@ -1,0 +1,46 @@
+----------------------------------------------------
+This page explains how to install the automation 
+scripts for sqa using this library created for python
+----------------------------------------------------
+
+Steps:
+
+1.  svn check out:
+svn co http://corp/svn/sqa/scripts 
+
+2. Run configure.sh - 
+This will addd the PYTHONLIB  to your  ~/.bashrc where the script were checked out
+
+copy and paste these 3 steps below:
+
+cd python
+./configure.sh
+source ~/.bashrc
+
+
+----------------------------------
+Example Test Usage script
+
+
+
+#!/usr/bin/python
+
+#Usage:
+# ./runCommand.py <hostname>
+# example ./runCommand.py sqa11
+
+from HostLinux import *
+#h = Host(sys.argv[1])
+h = hostLinux(sys.argv[1])
+
+# run command cat /etc/issue
+o = h.run_command("cat /etc/issue")
+
+# get return code
+rc = o['rc']
+output = o['output']
+
+# print output
+for line in output:
+   print line
+

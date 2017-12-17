@@ -1,0 +1,12 @@
+vgc-config: 3.0 (46085.C4)
+
+Current Configuration:
+/dev/vgca       3 partition(s)
+     /dev/vgca0                 mode=maxcapacity                sector-size=512         raid=enabled
+     /dev/vgca1                 mode=maxperformance               sector-size=512         raid=enabled
+/dev/vgcb       2 partition(s)
+     /dev/vgcb0                 mode=maxperformance             sector-size=512         raid=enabled
+     /dev/vgcb1                 mode=maxperformance             sector-size=4096         raid=enabled
+/dev/vgcc       1 partition(s)
+     /dev/vgcc0                 mode=maxcapacity                sector-size=512         raid=enabled
+
